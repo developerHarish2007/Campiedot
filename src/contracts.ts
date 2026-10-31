@@ -1,0 +1,16 @@
+export type NodeStatus='normal'|'incident'|'blocked'|'non-operational';
+export type WorkOrderState='OPEN'|'ASSIGNED'|'IN_PROGRESS'|'COMPLETED'|'BLOCKED';
+export type LocalPosition={x:number;z:number};
+export type BuildingFootprint={width:number;depth:number};
+export type EquipmentSummary={id:string;name:string;equipmentType:string;status:string;position?:LocalPosition};
+export type CampusNode={id:string;parentId:string|null;nodeType:'BUILDING'|'FLOOR'|'ROOM'|'ASSET'|'INFRASTRUCTURE';name:string;domain:'POWER'|'NETWORK'|'WATER'|'HVAC'|null;status:NodeStatus;position:LocalPosition|null;footprint:BuildingFootprint|null;rotation:number|null;heightMeters:number|null;floorCount:number|null;floor:number|null;capacity:number|null;equipment:EquipmentSummary[]};
+export type NodeDependency={id:string;sourceNodeId:string;targetNodeId:string;domain:'POWER'|'NETWORK'|'WATER'|'HVAC'};
+export type Booking={id:string;roomNodeId:string;title:string;startsAt:string;endsAt:string;status:'CONFIRMED'|'AT_RISK'|'RELOCATED'|'CANCELLED'};
+export type Part={sku:string;name:string;availableQty:number;reservedQty:number};
+export type AssignmentScore={skill:number;availability:number;workload:number;sla:number;total:number};
+export type MapWorkOrder={id:string;state:WorkOrderState;blockedReason:string|null;assignedStaffId:string|null;assignedStaffName:string|null;requiredPartSkus:string[];assignmentScore:AssignmentScore|null};
+export type MapIncident={id:string;title:string;status:string;priority:string;parentIncidentId:string|null;childIncidentIds:string[];affectedNodeIds:string[];allowedActions:string[];workOrders:MapWorkOrder[]};
+export type RecoveryPlan={id:string;label:'Plan A'|'Plan B';summary:string;affectedNodeIds:string[];relocations:{bookingId:string;fromNodeId:string;toNodeId:string}[];technicianAssignments:{workOrderId:string;staffId:string;staffName:string}[];partsReservations:{workOrderId:string;sku:string;quantity:number}[];impact:{affectedBookings:number;estimatedResolutionMinutes:number|null;slaAtRiskCount:number;partsRequired:string[]}};
+export type Simulation={simulationId:string;generatedAt:string;basedOnGeneratedAt:string;status:'PENDING_APPROVAL'|'APPROVED'|'EXECUTED'|'STALE';plans:[RecoveryPlan,RecoveryPlan]};
+export type Invariant={name:string;status:'pass'|'fail';lastCheckedAt:string;reason?:string};
+export type CampusMapStatusResponse={campusId:string;campusName:string;generatedAt:string;nodes:CampusNode[];dependencies:NodeDependency[];bookings:Booking[];parts:Part[];incidents:MapIncident[];whatIf:Simulation|null};

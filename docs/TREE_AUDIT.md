@@ -1,0 +1,130 @@
+# Tree & Vegetation Audit (Step A & Step B)
+
+## 1. Problem Statement
+In the exterior campus 3D view:
+1. **Lone Bare Tree:** A single bare tree with complex branches and no foliage stands in the lawn near the campus center $(0, 0, 0)$.
+2. **Floating Leaves:** All other trees placed along boundaries, road kerbs, and lawns show floating clusters of leaves with zero visible trunk or bark.
+3. **Performance Overhead:** The scene experiences heavy geometry and fill-rate load due to unoptimized tree foliage and shadow passes.
+
+---
+
+## 2. Step A - Root Cause Audit
+
+### 2.1 Where the Lone Bare Tree Comes From (Live Scene Evidence)
+Using live runtime evaluation of the Three.js scene graph via Playwright (`work/live_scene_audit.json` and `work/test_instanced_eval.py`):
+- The campus tree system consists of 5 variants rendered as pairs of `InstancedMesh`es in `TreeBatch`:
+  - **Variant 0 (Oak Medium):** Leaf mesh `id=1108` (75 instances) vs Branch mesh `id=1133` (75 instances)
+  - **Variant 1 (Ash Medium):** Leaf mesh `id=1111` (72 instances) vs Branch mesh `id=1134` (72 instances)
+  - **Variant 2 (Aspen Medium):** Leaf mesh `id=1114` (65 instances) vs Branch mesh `id=1135` (65 instances)
+  - **Variant 3 (Oak Small):** Leaf mesh `id=1117` (65 instances) vs Branch mesh `id=1136` (65 instances)
+  - **Variant 4 (Palm):** Leaf mesh `id=1120` (63 instances) vs Branch mesh `id=1137` (63 instances)
+- In the leaf meshes, all instances were correctly positioned across campus coordinates (e.g. `[-244.2, 0, 137.1]`, `[-155.5, 0, 8.9]`, etc.).
+- **However, in all 5 branch meshes, every single instance matrix was identical to the default identity matrix:**
+  ```json
+  "first16": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+  "instancesAtOrigin": 340 (100% of all branch instances across all 5 variants)
+  ```
+- In our local OpenStreetMap coordinate system, $(0, 0, 0)$ is situated in the central lawn just north-west of the PG Block (centroid $(63.4, 56.0)$).
+- **Conclusion:** The "lone bare tree" is **not** an intentional prototype or debug mesh. It is **all 340 tree trunks and branch networks from every single tree on campus rendered simultaneously on top of each other at $(0, 0, 0)$** at full unscaled unit scale $(1.0, 1.0, 1.0)$! Because the leaves were positioned elsewhere, this origin cluster appears as a dense, massive bare tree with no foliage.
+
+### 2.2 Why Branches Were Stuck at Origin (Instancing Synchronization Failure)
+In `TreeBatch` (`src/views/CampusWorld.tsx`):
+```tsx
+function TreeBatch({ branchesGeo, leavesGeo, barkMat, leafMat, matrices, quality }: ...) {
+  const branchRef = useRef<InstancedMesh>(null);
+  const leafRef = useRef<InstancedMesh>(null);
+
+  useEffect(() => {
+    if (!matrices.length) return;
+    matrices.forEach((mat, i) => {
+      branchRef.current?.setMatrixAt(i, mat);
+      leafRef.current?.setMatrixAt(i, mat);
+    });
+    if (branchRef.current) {
+      branchRef.current.count = matrices.length;
+      branchRef.current.instanceMatrix.needsUpdate = true;
+    }
+    if (leafRef.current) {
+      leafRef.current.count = matrices.length;
+      leafRef.current.instanceMatrix.needsUpdate = true;
+    }
+  }, [matrices]);
+
+  return (
+    <group>
+      <instancedMesh ref={branchRef} args={[branchesGeo, barkMat, matrices.length]} ... />
+      <instancedMesh ref={leafRef} args={[leavesGeo, leafMat, matrices.length]} ... />
+    </group>
+  );
+}
+```
+1. **R3F Object Lifecycle:** In React Three Fiber, if any argument in `args={[geo, mat, count]}` changes reference, R3F disposes the existing Three.js object and constructs a brand new `THREE.InstancedMesh(geo, mat, count)`.
+2. **`barkMat` Recreation:** `barkMat` was constructed with `useMemo(..., [textures])`. Because `textures` refreshed on re-render, `barkMat` received a new object reference.
+3. **Matrix Buffer Wipe:** When R3F reconstructed `branchRef.current`, the fresh `InstancedMesh` initialized its `instanceMatrix` array to default identity matrices `[1, 0, 0, 0, ...]`.
+4. **Stale Effect Dependency:** The `useEffect` that calls `setMatrixAt` only listed `[matrices]` in its dependency array. Because `matrices` did not change reference, `useEffect` **did not re-run** when the new `InstancedMesh` mounted.
+5. In contrast, `leafMats` was memoized on `[treeModels]`, so `leafRef` was never reconstructed and preserved its populated matrix buffer.
+6. **Result:** Leaves were transformed across campus; all trunks stayed at $(0, 0, 0)$.
+
+### 2.3 Bark Material and Texture Inspection
+From live inspection via Playwright (`work/inspect_bark.py`):
+- **Asset Loading:** All 4 PBR textures (`bark_brown_01_diff_1k.jpg`, `nor_gl`, `rough`, `ao`) successfully load from disk with dimensions 1024×1024.
+- **Color Space:** Diffuse map is correctly tagged `sRGB`; normal and roughness maps are correctly linear.
+- **Flaws Identified:**
+  1. **Missing `uv2` for AO Map:** `tree.branchesMesh.geometry` generated by EZ-Tree only generates a primary `uv` attribute. Three.js `MeshStandardMaterial` expects a second UV set (`uv2`) for `aoMap`. Binding an `aoMap` without `uv2` triggers WebGL shader fallbacks and causes inaccurate shading.
+  2. **Texture Tiling Scale:** The bark texture repeat in `textures.bark` defaulted to `repeat.set(1, 1)`. In EZ-Tree's presets (e.g. `oak_medium.json`), `textureScale` is specified as `y: 10`. Applying `(1, 1)` onto a 25-meter trunk stretches the bark texture 10× vertically, causing severe blurriness.
+
+### 2.4 LOD, Scale, Culling & Ground Elevation
+- **Ground Elevation:** Tree bases originate cleanly at $y = 0.0$. Trunks are not submerged below the ground plane.
+- **Frustum Culling:** `frustumCulled: true` is active on the `InstancedMesh`, but because the bounding sphere was computed around the origin geometry, the entire origin trunk stack was rendered whenever the campus center was in view.
+
+### 2.5 Current Tree Triangle & Draw Call Cost
+From geometry inspection of the live scene:
+
+| Variant | Instances | Leaf Tris / Tree | Branch Tris / Tree | Total Tris / Tree | Total Variant Tris |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **0. Oak Medium** | 75 | 21,840 | 3,166 | 25,006 | **1,875,450** |
+| **1. Ash Medium** | 72 | 24,960 | 9,120 | 34,080 | **2,453,760** |
+| **2. Aspen Medium** | 65 | 6,864 | 5,088 | 11,952 | **776,880** |
+| **3. Oak Small** | 65 | 9,360 | 3,206 | 12,566 | **816,790** |
+| **4. Coconut Palm** | 63 | 320 | 320 | 640 | **40,320** |
+| **TOTAL** | **340** | **—** | **—** | **—** | **5,963,200 Triangles** |
+
+- **Draw Calls:** 5 variants × 2 instanced meshes = 10 draw calls in the main beauty pass + 10 draw calls in the shadow map pass = **20 draw calls**.
+- **The Bottleneck:** Over **4.5 million triangles** are double-sided, alpha-tested leaf cards. In the shadow map pass (`PCFSoftShadowMap`), rendering 6 million vertices every frame severely impacts standard laptop GPUs.
+
+---
+
+## 3. Step B - Research & Industry Best Practices
+
+### 3.1 Three.js Vegetation Architecture
+A review of production WebGL forest implementations (Three.js documentation, waelyasmina.net, and vegetation optimization write-ups) establishes a 3-tier architecture:
+1. **Tier 1 - Near Trees (0 – 45m):**
+   - Full 3D instanced trunk + optimized foliage cards.
+   - Use `billboard: 'single'` (single quads rather than double perpendicular cross-quads), which halves leaf polygon count with negligible visual loss.
+   - Use EZ-Tree's built-in `leafStride` parameter (`leafStride: 2` with `leafScale: 1.4`): cuts leaf triangle count by **50%** while preserving full canopy volume and optical density.
+2. **Tier 2 - Mid Trees (45 – 120m):**
+   - Simplified low-poly trunk geometry (reduced radial segments from 8 to 4).
+   - Clustered canopy convex hull or decagonal leaf clusters (`leafStride: 4`).
+3. **Tier 3 - Far Trees (> 120m):**
+   - Camera-facing billboard impostors (2 triangles per tree) with a baked canopy texture atlas. Reduces millions of triangles to hundreds.
+
+### 3.2 Key Technical Optimizations for WebGL
+- **Shadow Exclusion on Distant Foliage:** Distant trees (> 60m) do not need to cast dynamic shadows into the sun shadow map. Only near trees and major buildings should cast shadows.
+- **`alphaToCoverage: true`:** When antialiasing is enabled in WebGL2, `alphaToCoverage` delivers clean alpha cutout edges without sorting artifacts.
+- **UV2 Generation for Bark:** Copy `uv` to `uv2` on `branchesGeo` so `aoMap` evaluates cleanly without shader compilation warnings.
+- **Instance Matrix Synchronization:** Rather than relying on fragile React effect lifecycles, construct `InstancedMesh` with geometries and materials passed as props, and update instance matrices synchronously using stable `InstancedMesh` references with `instanceMatrix.set(matrixBuffer)` and `instanceMatrix.needsUpdate = true`.
+
+---
+
+## 4. Action Plan for Step C & Step D
+
+1. **Step C: Test Scene & Instancing Fix**
+   - Verify isolated tree in `TreeTestScene` with visible bark texture (correct vertical repeat), solid trunk base, and full canopy.
+   - Fix `CampusTrees`: pass instance matrices directly into `InstancedBufferAttribute` or synchronize matrices reliably.
+   - Add LOD / leaf decimation: reduce leaf count from 24,000 tris/tree to ~2,500 tris/tree using single-quad billboards and `leafStride: 2`.
+   - Ensure zero prototype objects are added to the scene graph.
+2. **Step D: Performance & Measurement**
+   - Restrict shadow casting to nearby trees.
+   - Cap `devicePixelRatio` to `[1, 1.25]`.
+   - Measure and record before/after triangles, draw calls, and frame rates in `docs/PERF_NOTES.md`.
+
