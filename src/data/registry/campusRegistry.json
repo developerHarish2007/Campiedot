@@ -17,7 +17,10 @@
         "Civil & PG Block"
       ],
       "source": "demo",
-      "createdAt": "2026-10-31T00:00:00Z"
+      "createdAt": "2026-10-31T00:00:00Z",
+      "category": "academic",
+      "nameSource": "verified",
+      "hasRooms": true
     },
     {
       "blockId": "MAIN",
@@ -32,7 +35,10 @@
         "Administrative Block"
       ],
       "source": "demo",
-      "createdAt": "2026-10-31T00:00:00Z"
+      "createdAt": "2026-10-31T00:00:00Z",
+      "category": "academic",
+      "nameSource": "verified",
+      "hasRooms": true
     },
     {
       "blockId": "CIVIL",
@@ -46,7 +52,10 @@
         "Civil Block"
       ],
       "source": "demo",
-      "createdAt": "2026-10-31T00:00:00Z"
+      "createdAt": "2026-10-31T00:00:00Z",
+      "category": "academic",
+      "nameSource": "verified",
+      "hasRooms": true
     },
     {
       "blockId": "ECE",
@@ -61,7 +70,10 @@
         "ECE Block"
       ],
       "source": "demo",
-      "createdAt": "2026-10-31T00:00:00Z"
+      "createdAt": "2026-10-31T00:00:00Z",
+      "category": "academic",
+      "nameSource": "verified",
+      "hasRooms": true
     },
     {
       "blockId": "MECH",
@@ -75,7 +87,10 @@
         "Mechanical Block"
       ],
       "source": "demo",
-      "createdAt": "2026-10-31T00:00:00Z"
+      "createdAt": "2026-10-31T00:00:00Z",
+      "category": "academic",
+      "nameSource": "verified",
+      "hasRooms": true
     },
     {
       "blockId": "HOSTEL",
@@ -89,7 +104,10 @@
         "Boys Hostel"
       ],
       "source": "demo",
-      "createdAt": "2026-10-31T00:00:00Z"
+      "createdAt": "2026-10-31T00:00:00Z",
+      "category": "facility",
+      "nameSource": "unverified",
+      "hasRooms": false
     },
     {
       "blockId": "CANTEEN",
@@ -103,7 +121,10 @@
         "Canteen"
       ],
       "source": "demo",
-      "createdAt": "2026-10-31T00:00:00Z"
+      "createdAt": "2026-10-31T00:00:00Z",
+      "category": "facility",
+      "nameSource": "unverified",
+      "hasRooms": false
     },
     {
       "blockId": "LIB",
@@ -117,7 +138,10 @@
         "Library"
       ],
       "source": "demo",
-      "createdAt": "2026-10-31T00:00:00Z"
+      "createdAt": "2026-10-31T00:00:00Z",
+      "category": "facility",
+      "nameSource": "unverified",
+      "hasRooms": false
     },
     {
       "blockId": "AUD",
@@ -131,7 +155,10 @@
         "Auditorium"
       ],
       "source": "demo",
-      "createdAt": "2026-10-31T00:00:00Z"
+      "createdAt": "2026-10-31T00:00:00Z",
+      "category": "facility",
+      "nameSource": "unverified",
+      "hasRooms": false
     },
     {
       "blockId": "TNP",
@@ -143,6 +170,171 @@
       "aliases": [
         "landmark-tnp",
         "TNP Venue"
+      ],
+      "source": "demo",
+      "createdAt": "2026-10-31T00:00:00Z",
+      "category": "facility",
+      "nameSource": "unverified",
+      "hasRooms": false
+    },
+    {
+      "blockId": "OSM-354774621",
+      "displayName": "Block 1",
+      "nodeId": "building-block-4",
+      "osmWayId": 354774621,
+      "floors": 3,
+      "roomCount": 0,
+      "hasRooms": false,
+      "category": "unnamed",
+      "nameSource": "unnamed",
+      "aliases": [
+        "building-block-4",
+        "Block 4",
+        "osm-way-354774621"
+      ],
+      "source": "demo",
+      "createdAt": "2026-10-31T00:00:00Z"
+    },
+    {
+      "blockId": "OSM-355617971",
+      "displayName": "Block 2",
+      "nodeId": "building-block-5",
+      "osmWayId": 355617971,
+      "floors": 3,
+      "roomCount": 0,
+      "hasRooms": false,
+      "category": "unnamed",
+      "nameSource": "unnamed",
+      "aliases": [
+        "building-block-5",
+        "Block 5",
+        "osm-way-355617971"
+      ],
+      "source": "demo",
+      "createdAt": "2026-10-31T00:00:00Z"
+    },
+    {
+      "blockId": "OSM-355617978",
+      "displayName": "Block 3",
+      "nodeId": "building-block-6",
+      "osmWayId": 355617978,
+      "floors": 3,
+      "roomCount": 0,
+      "hasRooms": false,
+      "category": "unnamed",
+      "nameSource": "unnamed",
+      "aliases": [
+        "building-block-6",
+        "Block 6",
+        "osm-way-355617978"
+      ],
+      "source": "demo",
+      "createdAt": "2026-10-31T00:00:00Z"
+    },
+    {
+      "blockId": "OSM-355617990",
+      "displayName": "Block 4",
+      "nodeId": "building-block-7",
+      "osmWayId": 355617990,
+      "floors": 3,
+      "roomCount": 0,
+      "hasRooms": false,
+      "category": "unnamed",
+      "nameSource": "unnamed",
+      "aliases": [
+        "building-block-7",
+        "Block 7",
+        "osm-way-355617990"
+      ],
+      "source": "demo",
+      "createdAt": "2026-10-31T00:00:00Z"
+    },
+    {
+      "blockId": "OSM-355618012",
+      "displayName": "Block 5",
+      "nodeId": "building-block-8",
+      "osmWayId": 355618012,
+      "floors": 3,
+      "roomCount": 0,
+      "hasRooms": false,
+      "category": "unnamed",
+      "nameSource": "unnamed",
+      "aliases": [
+        "building-block-8",
+        "Block 8",
+        "osm-way-355618012"
+      ],
+      "source": "demo",
+      "createdAt": "2026-10-31T00:00:00Z"
+    },
+    {
+      "blockId": "OSM-355636470",
+      "displayName": "Block 6",
+      "nodeId": "building-block-9",
+      "osmWayId": 355636470,
+      "floors": 3,
+      "roomCount": 0,
+      "hasRooms": false,
+      "category": "unnamed",
+      "nameSource": "unnamed",
+      "aliases": [
+        "building-block-9",
+        "Block 9",
+        "osm-way-355636470"
+      ],
+      "source": "demo",
+      "createdAt": "2026-10-31T00:00:00Z"
+    },
+    {
+      "blockId": "OSM-355636693",
+      "displayName": "Block 7",
+      "nodeId": "building-block-10",
+      "osmWayId": 355636693,
+      "floors": 3,
+      "roomCount": 0,
+      "hasRooms": false,
+      "category": "unnamed",
+      "nameSource": "unnamed",
+      "aliases": [
+        "building-block-10",
+        "Block 10",
+        "osm-way-355636693"
+      ],
+      "source": "demo",
+      "createdAt": "2026-10-31T00:00:00Z"
+    },
+    {
+      "blockId": "OSM-355636694",
+      "displayName": "Block 8",
+      "nodeId": "building-block-11",
+      "osmWayId": 355636694,
+      "floors": 3,
+      "roomCount": 0,
+      "hasRooms": false,
+      "category": "unnamed",
+      "nameSource": "unnamed",
+      "aliases": [
+        "building-block-11",
+        "Block 11",
+        "osm-way-355636694"
+      ],
+      "source": "demo",
+      "createdAt": "2026-10-31T00:00:00Z"
+    },
+    {
+      "blockId": "OSM-364147634",
+      "displayName": "Block 9",
+      "nodeId": "building-block-12",
+      "osmWayId": 364147634,
+      "floors": 3,
+      "roomCount": 0,
+      "hasRooms": false,
+      "category": "unnamed",
+      "nameSource": "unnamed",
+      "aliases": [
+        "building-block-12",
+        "Block 12",
+        "osm-way-364147634"
       ],
       "source": "demo",
       "createdAt": "2026-10-31T00:00:00Z"

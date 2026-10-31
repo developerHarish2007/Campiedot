@@ -19,13 +19,16 @@ import { projectorPredictor, type DevicePrediction } from '../sim/projectorPredi
 import {
   getBlock,
   getBlockByNodeId,
+  getBlockByOsmWay,
   getRoomsForBlock,
   getRoom,
   getRoomByNodeIdOrAlias,
   getEquipmentForRoom,
   downloadRegistryFiles,
-  campusRegistry
+  campusRegistry,
+  getOrderedCampusBlocks
 } from '../data/registry/registryService';
+import { ScrollableDock } from './common/ScrollableDock';
 
 type XZ = { x: number; z: number };
 type ViewCommand = { type: 'focus' | 'overview'; revision: number; id?: string };
@@ -1610,45 +1613,50 @@ function Building({
     >
       <meshBasicMaterial colorWrite={false} depthWrite={false} transparent opacity={0} side={DoubleSide} />
     </mesh>
-    {node?.name && (
-      <Billboard
-        position={[record.centroid.x, height + 2.2, record.centroid.z]}
-        follow
-        lockX={false}
-        lockY={false}
-        lockZ={false}
-      >
-        <mesh
-          position={[0, 0, 0.1]}
-          onClick={e => {
-            e.stopPropagation();
-            onEnterBuilding?.(id);
-          }}
-          onPointerOver={() => { document.body.style.cursor = 'pointer'; }}
-          onPointerOut={() => { document.body.style.cursor = ''; }}
+    {(() => {
+      const regBlk = getBlockByOsmWay(record.osmWayId) ?? getBlockByNodeId(id);
+      const labelText = node?.name ?? regBlk?.displayName;
+      if (!labelText) return null;
+      return (
+        <Billboard
+          position={[record.centroid.x, height + 2.2, record.centroid.z]}
+          follow
+          lockX={false}
+          lockY={false}
+          lockZ={false}
         >
-          <planeGeometry args={[Math.min(record.widthMeters, 20) + 6.0, 4.5]} />
-          <meshBasicMaterial transparent opacity={0} side={DoubleSide} depthWrite={false} />
-        </mesh>
-        <Text
-          fontSize={1.6}
-          maxWidth={Math.min(record.widthMeters, 18)}
-          color="#fff7e8"
-          outlineWidth={.06}
-          outlineColor="#35413c"
-          anchorX="center"
-          anchorY="middle"
-          onClick={e => {
-            e.stopPropagation();
-            onEnterBuilding?.(id);
-          }}
-          onPointerOver={() => { document.body.style.cursor = 'pointer'; }}
-          onPointerOut={() => { document.body.style.cursor = ''; }}
-        >
-          {node.name.toUpperCase()}
-        </Text>
-      </Billboard>
-    )}
+          <mesh
+            position={[0, 0, 0.1]}
+            onClick={e => {
+              e.stopPropagation();
+              onEnterBuilding?.(regBlk?.nodeId ?? id);
+            }}
+            onPointerOver={() => { document.body.style.cursor = 'pointer'; }}
+            onPointerOut={() => { document.body.style.cursor = ''; }}
+          >
+            <planeGeometry args={[Math.min(record.widthMeters, 20) + 6.0, 4.5]} />
+            <meshBasicMaterial transparent opacity={0} side={DoubleSide} depthWrite={false} />
+          </mesh>
+          <Text
+            fontSize={1.6}
+            maxWidth={Math.min(record.widthMeters, 18)}
+            color="#fff7e8"
+            outlineWidth={.06}
+            outlineColor="#35413c"
+            anchorX="center"
+            anchorY="middle"
+            onClick={e => {
+              e.stopPropagation();
+              onEnterBuilding?.(regBlk?.nodeId ?? id);
+            }}
+            onPointerOver={() => { document.body.style.cursor = 'pointer'; }}
+            onPointerOut={() => { document.body.style.cursor = ''; }}
+          >
+            {labelText.toUpperCase()}
+          </Text>
+        </Billboard>
+      );
+    })()}
   </group>;
 }
 
@@ -1690,8 +1698,11 @@ function FocusSelected({ controls, command, data, snapshot, introFinished }: {
     if (command.type !== 'focus' || !introFinished || !command.id) { transition.current = null; return; }
     const selected = snapshot?.nodes.find(n => n.id === command.id);
     const parentId = selected?.parentId;
-    const osmId = command.id.startsWith('osm-way-') ? Number(command.id.slice('osm-way-'.length)) : undefined;
-    const building = data.buildings.find(b => b.campusNodeId === command.id || b.osmWayId === osmId || (parentId && b.campusNodeId === parentId));
+    const regBlk = getBlockByNodeId(command.id) ?? getBlock(command.id);
+    const osmId = command.id.startsWith('osm-way-')
+      ? Number(command.id.slice('osm-way-'.length))
+      : regBlk?.osmWayId;
+    const building = data.buildings.find(b => b.campusNodeId === command.id || (osmId !== undefined && b.osmWayId === osmId) || (parentId && b.campusNodeId === parentId));
     const point = building?.centroid ?? selected?.position;
     if (!point) return;
     const distance = Math.max(75, Math.max(building?.widthMeters ?? 35, building?.depthMeters ?? 35) * 1.65);
@@ -1956,11 +1967,7 @@ function ScannedAsset({ path }: { path: string }) {
   return path.endsWith('.splat') || path.endsWith('.ply') ? <Splat src={path} position={[0, 0, 0]} toneMapped /> : <Suspense fallback={null}><ScanModel src={path} /></Suspense>;
 }
 const officialNames = [
-  'unassigned', 'not a campus building', 'Main Block', 'Electronics Block', 'Electronics Block I', 'Electronics Block II',
-  'Basic Engineering Block', 'PG Block', 'Civil Block', 'Mechanical Block', 'Workshop Block 1', 'Workshop Block 2',
-  'Workshop Block 3', 'East Block', 'Block 1', 'Block 2', 'Block 3', 'Block 4', 'Block 5', 'Block 6', 'Block 7',
-  'Block 8', 'Block 9', 'Block 10', 'Block 11', 'Block 12', 'Block 13', 'Block 14',
-  'Sports Complex', 'Boys Hostel', 'Canteen', 'Library', 'Auditorium', 'TNP Venue'
+  'unassigned', 'not a campus building', ...campusRegistry.blocks.map(b => b.displayName)
 ];
 function AlignmentScene({ data, assignments, selectedWay, hoveredWay, setHoveredWay, showAllLabels, onSelect, measure, points, onMeasure }: {
   data: OsmCampusData; assignments: Record<number, string>; selectedWay: number | null; onSelect: (id: number) => void;
@@ -2425,8 +2432,14 @@ export function CampusWorld({
 
   const selectedBlock = useMemo(() => {
     if (!selectedNodeId) return null;
-    return getBlockByNodeId(selectedNodeId) ?? getBlock(selectedNodeId);
+    return getBlockByNodeId(selectedNodeId) ?? getBlock(selectedNodeId) ?? (
+      selectedNodeId.startsWith('osm-way-')
+        ? getBlockByOsmWay(Number(selectedNodeId.slice('osm-way-'.length)))
+        : undefined
+    );
   }, [selectedNodeId]);
+
+  const orderedBlocks = useMemo(() => getOrderedCampusBlocks(), []);
 
   const selectedBlockRooms = useMemo(() => {
     if (!selectedBlock) return [];
@@ -2520,7 +2533,9 @@ export function CampusWorld({
       setInteriorBlockId(matchingRoom.blockId);
       setInteriorRoomId(matchingRoom.roomId);
     } else {
-      const matchingBlock = getBlockByNodeId(id);
+      const matchingBlock = getBlockByNodeId(id) ?? getBlock(id) ?? (
+        id.startsWith('osm-way-') ? getBlockByOsmWay(Number(id.slice('osm-way-'.length))) : undefined
+      );
       if (matchingBlock) {
         setInteriorBlockId(matchingBlock.blockId);
       }
@@ -2529,7 +2544,9 @@ export function CampusWorld({
 
   const handleEnterBuildingFromLabel = useCallback((nodeIdOrWayId: string) => {
     handleSelectNode(nodeIdOrWayId);
-    const blk = getBlockByNodeId(nodeIdOrWayId) ?? getBlock(nodeIdOrWayId);
+    const blk = getBlockByNodeId(nodeIdOrWayId) ?? getBlock(nodeIdOrWayId) ?? (
+      nodeIdOrWayId.startsWith('osm-way-') ? getBlockByOsmWay(Number(nodeIdOrWayId.slice('osm-way-'.length))) : undefined
+    );
     if (blk) {
       const rooms = getRoomsForBlock(blk.blockId);
       if (rooms.length > 0) {
@@ -2619,7 +2636,10 @@ export function CampusWorld({
         try { const response = await fetch('/data/building-assignments.json'); if (response.ok) setFootprintNames(await response.json()); } catch { /* assignment JSON is optional in static builds */ }
         if (cancelled) return;
         const mapped = new Map<number, string>();
-        for (const [nodeId, item] of Object.entries(osmBuildingAssignments)) mapped.set(item.osmWayId, nodeId);
+        for (const b of campusRegistry.blocks) mapped.set(b.osmWayId, b.nodeId);
+        for (const [nodeId, item] of Object.entries(osmBuildingAssignments)) {
+          if (!mapped.has(item.osmWayId)) mapped.set(item.osmWayId, nodeId);
+        }
         d.buildings.forEach((b: OsmBuilding) => { const node = mapped.get(b.osmWayId); if (node) b.campusNodeId = node; });
         setData(d as OsmCampusData);
       }).catch(e => console.error('Unable to load local OpenStreetMap geometry', e));
@@ -2833,27 +2853,38 @@ export function CampusWorld({
       <div className="align-list">{data.buildings.map(b=><button key={b.osmWayId} className={selectedWay===b.osmWayId?'active':''} onClick={()=>setSelectedWay(b.osmWayId)}>{footprintNames[b.osmWayId]??(b.campusNodeId?(osmBuildingAssignments as Record<string,{displayName:string}>)[b.campusNodeId]?.displayName:null)??'Unassigned'} · {b.osmWayId}</button>)}</div>
     </div>}
     {!alignment && interiorMode === 'cutaway' && (
-      <div className="world-bottom">
-        <div className="landmark-dock">
-          <span style={{ fontWeight: 700, color: '#e2ece6', marginRight: 4, whiteSpace: 'nowrap' }}>🏢 Select Room:</span>
-          {currentBlockRooms.map(r => (
-            <button
-              key={r.roomId}
-              className={`dock-btn ${r.type === 'smart_lab' ? 'active' : ''}`}
-              style={{
-                background: r.type === 'smart_lab' ? '#254e3f' : undefined,
-                borderColor: r.type === 'smart_lab' ? '#72c8a0' : undefined
-              }}
-              title={`View ${r.displayName} (${r.type})`}
-              onClick={() => {
-                enterRoomDiorama(r.roomId);
-              }}
-            >
-              {r.type === 'smart_lab' ? '★ ' : ''}{r.displayName}
-            </button>
-          ))}
-        </div>
-        <span>🖱 Click room or pill to enter Diorama · Scroll zoom · Drag orbit</span>
+      <div className="world-bottom" style={{ background: 'transparent', border: 'none', padding: 0, backdropFilter: 'none' }}>
+        <ScrollableDock
+          activeId={interiorRoomId}
+          hintCaption="🖱 Click room or pill to enter Diorama · Scroll zoom · Drag orbit"
+          prefix={
+            <span style={{ fontWeight: 700, color: '#e2ece6', fontSize: 11, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
+              🏢 Select Room:
+            </span>
+          }
+        >
+          {currentBlockRooms.map(r => {
+            const isSelected = r.roomId === interiorRoomId;
+            return (
+              <button
+                key={r.roomId}
+                data-dock-id={r.roomId}
+                className={`dock-btn ${isSelected ? 'selected' : ''} ${r.type === 'smart_lab' ? 'active' : ''}`}
+                style={{
+                  background: isSelected ? '#15803d' : r.type === 'smart_lab' ? '#254e3f' : undefined,
+                  borderColor: isSelected ? '#86efac' : r.type === 'smart_lab' ? '#72c8a0' : undefined,
+                  fontWeight: isSelected ? 700 : undefined
+                }}
+                title={`View ${r.displayName} (${r.type})`}
+                onClick={() => {
+                  enterRoomDiorama(r.roomId);
+                }}
+              >
+                {r.type === 'smart_lab' ? '★ ' : ''}{r.displayName}
+              </button>
+            );
+          })}
+        </ScrollableDock>
       </div>
     )}
     {!alignment && interiorMode === 'campus' && (
@@ -2923,19 +2954,61 @@ export function CampusWorld({
     )}
     {!alignment && interiorMode === 'campus' && <div className="world-info"><Compass /><Minimap /></div>}
     {!alignment && interiorMode === 'campus' && (
-      <div className="world-bottom">
-        <div className="landmark-dock">
-          <button className="dock-btn" title="Campus Overview (Key: R)" onClick={handleOverview}>🏛️ Overview</button>
-          <button className="dock-btn" title="Main Block (Key: 1)" onClick={() => handleSelectNode('building-main')}>🏢 Main (1)</button>
-          <button className="dock-btn" title="PG Block (Key: 2)" onClick={() => handleSelectNode('building-pg')}>🔬 PG (2)</button>
-          <button className="dock-btn" title="Library (Key: 3)" onClick={() => handleSelectNode('landmark-library')}>📚 Library (3)</button>
-          <button className="dock-btn" title="Electronics Block (Key: 4)" onClick={() => handleSelectNode('building-electronics')}>⚡ Electronics (4)</button>
-          <button className="dock-btn" title="Mechanical Block (Key: 5)" onClick={() => handleSelectNode('building-mechanical')}>⚙️ Mech (5)</button>
-          <button className="dock-btn" title="Canteen (Key: 6)" onClick={() => handleSelectNode('landmark-canteen')}>🍽️ Canteen (6)</button>
-          <button className="dock-btn" title="Auditorium (Key: 7)" onClick={() => handleSelectNode('landmark-auditorium')}>🎭 Auditorium (7)</button>
-        </div>
-        <span>Click a building, then Enter. Esc to go back.</span>
-        <StatsPill />
+      <div className="world-bottom" style={{ background: 'transparent', border: 'none', padding: 0, backdropFilter: 'none' }}>
+        <ScrollableDock
+          activeId={selectedBlock?.blockId ?? selectedNodeId}
+          hintCaption="💡 Click a building, then Enter. Esc to go back."
+          prefix={
+            <button
+              className="dock-btn"
+              title="Campus Overview (Key: R)"
+              onClick={handleOverview}
+              style={{ fontWeight: 700, background: '#1c2e28' }}
+            >
+              🏛️ Overview
+            </button>
+          }
+          suffix={<StatsPill />}
+        >
+          {orderedBlocks.map(b => {
+            const isSelected = selectedBlock?.blockId === b.blockId || selectedNodeId === b.nodeId;
+            const hasRooms = (b.hasRooms ?? (b.roomCount > 0));
+            return (
+              <button
+                key={b.blockId}
+                data-dock-id={b.blockId}
+                className={`dock-btn ${isSelected ? 'selected' : ''}`}
+                style={{
+                  background: isSelected ? '#15803d' : undefined,
+                  borderColor: isSelected ? '#86efac' : undefined,
+                  color: isSelected ? '#ffffff' : undefined,
+                  fontWeight: isSelected ? 700 : undefined
+                }}
+                title={`${b.displayName}${b.nameSource === 'unverified' ? ' (Unverified name)' : ''}${hasRooms ? ' · Has interiors' : ''}`}
+                onClick={() => {
+                  handleSelectNode(b.nodeId);
+                }}
+              >
+                {b.displayName}
+                {b.nameSource === 'unverified' && (
+                  <span
+                    style={{
+                      marginLeft: 4,
+                      fontSize: 9,
+                      opacity: 0.75,
+                      padding: '1px 3px',
+                      background: 'rgba(255, 255, 255, 0.15)',
+                      borderRadius: 3,
+                      border: '1px solid rgba(255, 255, 255, 0.2)'
+                    }}
+                  >
+                    ?
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </ScrollableDock>
       </div>
     )}
     {!alignment && <div className="world-caption">{interiorMode === 'diorama' ? 'Room Diorama · Authentic Indian College Classroom' : interiorMode === 'cutaway' ? 'Exploded Vertical Floor Cutaway · Select room for diorama' : (scanPath ? 'Photogrammetry hero scene · OSM proxy overlays' : 'OpenStreetMap footprints · estimated heights where OSM has no height tags')}</div>}
