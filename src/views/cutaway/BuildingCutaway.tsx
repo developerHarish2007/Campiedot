@@ -5,10 +5,13 @@ import { BoxGeometry as THREE_BoxGeometry, DoubleSide, MeshStandardMaterial, Col
 import type { RegistryBlock, RegistryRoom, RegistryEquipment } from '../../data/registry/registryService';
 import { getEquipmentHealthState } from '../../data/registry/registryService';
 
+import type { DevicePrediction } from '../../sim/projectorPredictor';
+
 interface CutawayProps {
   block: RegistryBlock;
   rooms: RegistryRoom[];
   equipment: RegistryEquipment[];
+  predictions?: Record<string, DevicePrediction>;
   onSelectRoom: (roomId: string) => void;
   onBack: () => void;
   night?: boolean;
@@ -20,6 +23,7 @@ export function BuildingCutaway({
   block,
   rooms,
   equipment,
+  predictions,
   onSelectRoom,
   onBack,
   night = false
@@ -86,6 +90,7 @@ export function BuildingCutaway({
                 <PgRoomsLayout
                   rooms={floorRooms}
                   equipment={equipment}
+                  predictions={predictions}
                   hoveredRoomId={hoveredRoomId}
                   onHoverRoom={setHoveredRoomId}
                   onSelectRoom={onSelectRoom}
@@ -153,12 +158,14 @@ function PgFloorSlab({ floorIndex }: { floorIndex: number }) {
 function PgRoomsLayout({
   rooms,
   equipment,
+  predictions,
   hoveredRoomId,
   onHoverRoom,
   onSelectRoom
 }: {
   rooms: RegistryRoom[];
   equipment: RegistryEquipment[];
+  predictions?: Record<string, DevicePrediction>;
   hoveredRoomId: string | null;
   onHoverRoom: (id: string | null) => void;
   onSelectRoom: (id: string) => void;
@@ -181,8 +188,9 @@ function PgRoomsLayout({
         const smartLab = room.type === 'smart_lab' || roomEquip.length > 0;
         const isHovered = hoveredRoomId === room.roomId;
 
-        // Health state
-        const worstHealth = roomEquip.reduce((prev, curr) => {
+        // Health state (dynamic from projector predictor if available)
+        const pred = predictions?.[`${room.roomId}-PROJ`];
+        const worstHealth = pred ? pred.healthState : roomEquip.reduce((prev, curr) => {
           const state = getEquipmentHealthState(curr.healthScore, curr.status);
           if (state === 'failed') return 'failed';
           if (state === 'imminent' && prev !== 'failed') return 'imminent';

@@ -10,6 +10,7 @@ import {
 } from 'three';
 import type { RegistryRoom, RegistryEquipment } from '../../data/registry/registryService';
 import { getEquipmentHealthState } from '../../data/registry/registryService';
+import type { DevicePrediction } from '../../sim/projectorPredictor';
 import {
   getTileTexture,
   getWallTexture,
@@ -22,6 +23,7 @@ import {
 interface DioramaProps {
   room: RegistryRoom;
   equipment: RegistryEquipment[];
+  prediction?: DevicePrediction;
   onBack: () => void;
   night?: boolean;
 }
@@ -32,7 +34,7 @@ const ROOM_D = 7.0;
 const ROOM_H = 3.2;
 const WALL_THICK = 0.23;
 
-export function ClassroomDiorama({ room, equipment, onBack, night = false }: DioramaProps) {
+export function ClassroomDiorama({ room, equipment, prediction, onBack, night = false }: DioramaProps) {
   const [hoveredEquip, setHoveredEquip] = useState<RegistryEquipment | null>(null);
 
   const { camera } = useThree();
@@ -307,11 +309,15 @@ export function ClassroomDiorama({ room, equipment, onBack, night = false }: Dio
               onPointerOver={(e) => { e.stopPropagation(); if (projector) setHoveredEquip(projector); }}
               onPointerOut={() => setHoveredEquip(null)}
             >
-              <ProjectorUnit equipment={projector} />
+              <ProjectorUnit
+                equipment={projector}
+                prediction={prediction}
+                isHovered={hoveredEquip?.type === 'PROJECTOR'}
+              />
               {projector && (
                 <EquipmentIndicator
                   position={[0, -0.4, 0]}
-                  state={getEquipmentHealthState(projector.healthScore, projector.status)}
+                  state={prediction ? prediction.healthState : getEquipmentHealthState(projector.healthScore, projector.status)}
                 />
               )}
             </group>
@@ -669,8 +675,30 @@ function StudentBenches({ woodMat, metalMat }: { woodMat: any; metalMat: any }) 
 // Smart Lab Units
 // -------------------------------------------------------------
 
-function ProjectorUnit({ equipment }: { equipment?: RegistryEquipment }) {
-  const isFailed = equipment?.status === 'FAULTY';
+function ProjectorUnit({
+  equipment,
+  prediction,
+  isHovered
+}: {
+  equipment?: RegistryEquipment;
+  prediction?: DevicePrediction;
+  isHovered?: boolean;
+}) {
+  const healthState = prediction?.healthState ?? (equipment?.status === 'FAULTY' ? 'failed' : 'healthy');
+  const isFailed = healthState === 'failed';
+  const isImminent = healthState === 'imminent';
+  const isDegrading = healthState === 'degrading';
+
+  const bodyColor =
+    isFailed ? '#1e293b' :
+    isImminent ? '#ef4444' :
+    isDegrading ? '#f59e0b' : '#f8fafc';
+
+  const ledColor =
+    isFailed ? '#ef4444' :
+    isImminent ? '#f97316' :
+    isDegrading ? '#eab308' : '#22c55e';
+
   return (
     <group>
       {/* Downrod and mount */}
@@ -681,7 +709,12 @@ function ProjectorUnit({ equipment }: { equipment?: RegistryEquipment }) {
       {/* Projector Body */}
       <mesh position={[0, 0, 0]} castShadow>
         <boxGeometry args={[0.38, 0.12, 0.28]} />
-        <meshStandardMaterial color="#f8fafc" roughness={0.3} />
+        <meshStandardMaterial
+          color={bodyColor}
+          emissive={isImminent ? '#ef4444' : isDegrading ? '#b45309' : '#000000'}
+          emissiveIntensity={isImminent ? 0.35 : isDegrading ? 0.18 : 0}
+          roughness={0.3}
+        />
       </mesh>
       {/* Lens */}
       <mesh position={[0, -0.01, -0.15]} rotation={[Math.PI / 2, 0, 0]}>
@@ -690,15 +723,36 @@ function ProjectorUnit({ equipment }: { equipment?: RegistryEquipment }) {
       </mesh>
       {/* Power / Status LED */}
       <mesh position={[0.14, 0.04, -0.13]}>
-        <sphereGeometry args={[0.008, 8, 8]} />
-        <meshBasicMaterial color={isFailed ? '#ef4444' : '#22c55e'} />
+        <sphereGeometry args={[0.01, 8, 8]} />
+        <meshBasicMaterial color={ledColor} />
       </mesh>
       {/* Subtle Projection Cone (when operational) */}
       {!isFailed && (
         <mesh position={[0, -0.3, -1.8]} rotation={[-Math.PI / 8, 0, 0]}>
           <coneGeometry args={[0.8, 3.2, 16, 1, true]} />
-          <meshBasicMaterial color="#ffffff" transparent opacity={0.06} side={DoubleSide} depthWrite={false} />
+          <meshBasicMaterial color={isImminent ? '#fca5a5' : '#ffffff'} transparent opacity={0.06} side={DoubleSide} depthWrite={false} />
         </mesh>
+      )}
+
+      {/* Hover Telemetry Overlay */}
+      {isHovered && prediction && (
+        <Billboard position={[0, 0.52, 0]}>
+          <group>
+            <mesh position={[0, 0, -0.01]}>
+              <planeGeometry args={[3.2, 1.25]} />
+              <meshBasicMaterial color="#0f172a" transparent opacity={0.92} />
+            </mesh>
+            <Text position={[0, 0.40, 0.01]} fontSize={0.16} color="#ffffff" anchorX="center" anchorY="middle">
+              {prediction.deviceId} · {prediction.healthScore}/100 ({prediction.healthState.toUpperCase()})
+            </Text>
+            <Text position={[0, 0.14, 0.01]} fontSize={0.12} color={ledColor} anchorX="center" anchorY="middle">
+              Mode: {prediction.failureMode} · Est: {prediction.predictedFailureAt ?? 'N/A'}
+            </Text>
+            <Text position={[0, -0.18, 0.01]} fontSize={0.10} maxWidth={2.9} color="#94a3b8" anchorX="center" anchorY="middle">
+              {prediction.reasons[0] ?? 'Nominal operation'}
+            </Text>
+          </group>
+        </Billboard>
       )}
     </group>
   );

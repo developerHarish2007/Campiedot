@@ -13,6 +13,9 @@ import { nodeStatusStyle } from '../adapters/campusMapAdapter';
 import { osmBuildingAssignments } from '../data/osmBuildingAssignments';
 import { BuildingCutaway } from './cutaway/BuildingCutaway';
 import { ClassroomDiorama } from './classroom/ClassroomDiorama';
+import { ProjectorSimPanel } from './classroom/ProjectorSimPanel';
+import { projectorSim, PG_PROJECTOR_IDS, type FaultType } from '../sim/projectorSim';
+import { projectorPredictor, type DevicePrediction } from '../sim/projectorPredictor';
 import {
   getBlock,
   getBlockByNodeId,
@@ -2316,6 +2319,43 @@ export function CampusWorld({
   const [localInteriorBlockId, setLocalInteriorBlockId] = useState<string>('PG');
   const [localInteriorRoomId, setLocalInteriorRoomId] = useState<string>('PG-001');
 
+  // Projector Predictive Maintenance Simulation State (PG Smart Labs)
+  const [simDay, setSimDay] = useState(0);
+  const [projectorFaults, setProjectorFaults] = useState<Record<string, FaultType>>({
+    'PG-102-PROJ': 'none',
+    'PG-201-PROJ': 'none',
+    'PG-202-PROJ': 'none',
+    'PG-302-PROJ': 'none',
+    'PG-402-PROJ': 'none'
+  });
+  const [showSimPanel, setShowSimPanel] = useState(true);
+
+  const handleSetProjectorFault = useCallback((deviceId: string, fault: FaultType) => {
+    projectorSim.setFault(deviceId, fault, simDay);
+    setProjectorFaults(prev => ({ ...prev, [deviceId]: fault }));
+  }, [simDay]);
+
+  const handleResetSim = useCallback(() => {
+    projectorSim.reset();
+    setSimDay(0);
+    setProjectorFaults({
+      'PG-102-PROJ': 'none',
+      'PG-201-PROJ': 'none',
+      'PG-202-PROJ': 'none',
+      'PG-302-PROJ': 'none',
+      'PG-402-PROJ': 'none'
+    });
+  }, []);
+
+  const projectorPredictions = useMemo(() => {
+    const res: Record<string, DevicePrediction> = {};
+    for (const p of PG_PROJECTOR_IDS) {
+      const readings = projectorSim.getReadingsUpToDay(p.deviceId, simDay);
+      res[p.deviceId] = projectorPredictor.predict(p.deviceId, readings);
+    }
+    return res;
+  }, [simDay, projectorFaults]);
+
   const interiorMode = propInteriorMode ?? localInteriorMode;
   const setInteriorMode = useCallback((mode: 'campus' | 'cutaway' | 'diorama') => {
     onInteriorModeChange?.(mode);
@@ -2594,6 +2634,7 @@ export function CampusWorld({
             block={currentBlock}
             rooms={currentBlockRooms}
             equipment={campusRegistry.equipment.filter(e => e.blockId === currentBlock.blockId)}
+            predictions={projectorPredictions}
             onSelectRoom={(roomId) => {
               enterRoomDiorama(roomId);
             }}
@@ -2614,6 +2655,7 @@ export function CampusWorld({
           <ClassroomDiorama
             room={currentRoom}
             equipment={getEquipmentForRoom(currentRoom.roomId)}
+            prediction={projectorPredictions[`${currentRoom.roomId}-PROJ`]}
             onBack={() => {
               setInteriorMode('cutaway');
               if (typeof window !== 'undefined') {
@@ -2662,6 +2704,7 @@ export function CampusWorld({
               window.history.replaceState(null, '', url.toString());
             }
           }}>🏛️ Campus View</button>
+          <button onClick={() => setShowSimPanel(v => !v)} style={{ background: showSimPanel ? '#0284c7' : '#1e293b', borderColor: '#38bdf8' }}>{showSimPanel ? 'Hide Sim' : '⚡ Sim Panel'}</button>
           <button onClick={downloadRegistryFiles}>📥 Export Registry</button>
           <button onClick={() => setNight(v => !v)}>{night ? '☾ Night' : '☼ Daylight'}</button>
           {onTogglePanel && <button onClick={onTogglePanel} style={{ background: panelOpen ? '#274b3d' : undefined }}>{panelOpen ? '📋 Operations ◧' : '📋 Operations ◨'}</button>}
@@ -2679,6 +2722,7 @@ export function CampusWorld({
               window.history.replaceState(null, '', url.toString());
             }
           }}>← Campus (ESC)</button>
+          <button onClick={() => setShowSimPanel(v => !v)} style={{ background: showSimPanel ? '#0284c7' : '#1e293b', borderColor: '#38bdf8' }}>{showSimPanel ? 'Hide Sim' : '⚡ Sim Panel'}</button>
           <button onClick={downloadRegistryFiles}>📥 Export Registry</button>
           <button onClick={() => setNight(v => !v)}>{night ? '☾ Night' : '☼ Daylight'}</button>
           <button onClick={() => setQuality(v => !v)}>{quality ? '✨ Perf: Quality' : '⚡ Perf: Fast'}</button>
@@ -2720,6 +2764,16 @@ export function CampusWorld({
         </>
       )}
     </div></div>
+    {showSimPanel && (interiorMode === 'cutaway' || interiorMode === 'diorama') && (
+      <ProjectorSimPanel
+        currentDay={simDay}
+        onDayChange={setSimDay}
+        predictions={projectorPredictions}
+        faults={projectorFaults}
+        onSetFault={handleSetProjectorFault}
+        onReset={handleResetSim}
+      />
+    )}
     <TelemetryOverlay show={showStats && !alignment} quality={quality} />
     {!alignment && interiorMode === 'campus' && walkMode && (
       <div className="walk-hud">
