@@ -1,6 +1,7 @@
 // Bridge connecting Arun0729 CampusOps Dashboard and Antigravity 3D Digital Twin
 import roomMappingRaw from '../data/roomMapping.json';
 import { DevicePrediction } from '../sim/projectorPredictor';
+import { DASHBOARD_URL } from '../config/urls';
 
 export interface StudentReport {
   id: string;
@@ -126,7 +127,7 @@ export class DashboardBridge {
       try {
         let res: Response | null = null;
         try {
-          res = await fetch('http://localhost:5173/api/v1/work-orders?limit=25', {
+          res = await fetch(`${DASHBOARD_URL}/api/v1/work-orders?limit=25`, {
             headers: { 'Content-Type': 'application/json' }
           });
         } catch {}

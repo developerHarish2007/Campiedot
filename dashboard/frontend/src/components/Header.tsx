@@ -9,6 +9,7 @@ import {
   Shield,
   Wrench,
   LogOut,
+  ArrowLeft,
 } from 'lucide-react';
 
 export type TabType =
@@ -34,6 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   onResetChoice,
 }) => {
   const { currentUser } = useAuth();
+  const twinUrl = (import.meta as any).env?.VITE_TWIN_URL || 'http://localhost:5174';
 
   const adminNavItems: { id: TabType; label: string; icon: any }[] = [
     { id: 'admin-overview', label: 'Live Database Stats', icon: LayoutDashboard },
@@ -41,10 +43,26 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'room-management', label: 'Rooms & Facilities', icon: DoorOpen },
   ];
 
+  const handleBackToTwin = () => {
+    window.open(twinUrl, 'campusops-twin');
+  };
+
   return (
     <header className="h-14 bg-slate-900 border-b border-slate-800 px-5 flex items-center justify-between shrink-0 select-none z-40 shadow-sm">
       {/* Brand & Identity */}
       <div className="flex items-center space-x-3 shrink-0">
+        {/* Back to 3D Twin Persistent Link */}
+        <button
+          onClick={handleBackToTwin}
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 transition shadow-sm cursor-pointer"
+          title="Return to CampusOps 3D Digital Twin"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>← Back to 3D Twin</span>
+        </button>
+
+        <div className="h-5 w-px bg-slate-800 mx-1" />
+
         <div className="flex items-center space-x-2.5">
           <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white text-xs shadow-md shadow-indigo-950">
             EO

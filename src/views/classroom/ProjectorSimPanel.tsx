@@ -24,6 +24,7 @@ interface SimPanelProps {
   onSelectDevice?: (deviceId: string) => void;
   noiseEnabled?: boolean;
   onToggleNoise?: (enabled: boolean) => void;
+  onClose?: () => void;
 }
 
 export function ProjectorSimPanel({
@@ -38,7 +39,8 @@ export function ProjectorSimPanel({
   selectedDeviceId = 'PG-201-PROJ',
   onSelectDevice,
   noiseEnabled = false,
-  onToggleNoise
+  onToggleNoise,
+  onClose
 }: SimPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -182,6 +184,7 @@ export function ProjectorSimPanel({
             </button>
             <button
               onClick={() => setCollapsed(v => !v)}
+              title={collapsed ? "Expand Panel" : "Collapse Panel"}
               style={{
                 padding: '4px 7px',
                 fontSize: 11,
@@ -194,6 +197,24 @@ export function ProjectorSimPanel({
             >
               {collapsed ? '▼' : '▲'}
             </button>
+            {onClose && (
+              <button
+                onClick={onClose}
+                title="Close Sim Panel (Esc)"
+                style={{
+                  padding: '4px 7px',
+                  fontSize: 11,
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  color: '#f87171',
+                  border: '1px solid #dc2626',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  fontWeight: 700
+                }}
+              >
+                ✕
+              </button>
+            )}
           </div>
         </div>
 

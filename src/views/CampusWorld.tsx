@@ -30,6 +30,8 @@ import {
 } from '../data/registry/registryService';
 import { ScrollableDock } from './common/ScrollableDock';
 import { dashboardBridge } from '../services/dashboardBridge';
+import { createProceduralBroadleafTree } from './proceduralBroadleafTree';
+import { openDashboard } from '../config/urls';
 
 type XZ = { x: number; z: number };
 type ViewCommand = { type: 'focus' | 'overview'; revision: number; id?: string };
@@ -53,8 +55,6 @@ type WorldProps = {
   onSelectNode?: (id: string) => void;
   affectedNodeIds?: string[];
   whatIfNodeIds?: string[];
-  panelOpen?: boolean;
-  onTogglePanel?: () => void;
   interiorMode?: 'campus' | 'cutaway' | 'diorama';
   onInteriorModeChange?: (mode: 'campus' | 'cutaway' | 'diorama') => void;
   interiorBlockId?: string;
@@ -777,109 +777,6 @@ function RoadNetwork({ roads, bounds, textures }: { roads: OsmRoad[]; bounds: XZ
   );
 }
 
-function createProceduralPalm(isLod = false): { branches: BufferGeometry; leaves: BufferGeometry } {
-  // Trunk: slender curved coconut palm
-  const trunkCurve = new CatmullRomCurve3([
-    new Vector3(0, 0, 0),
-    new Vector3(0.4, 4, 0.2),
-    new Vector3(0.9, 9, 0.5),
-    new Vector3(1.3, 14, 0.8),
-  ]);
-  const trunkGeo = new TubeGeometry(trunkCurve, isLod ? 10 : 20, 0.36, isLod ? 5 : 8, false);
-  if (trunkGeo.attributes.uv && !trunkGeo.attributes.uv2) {
-    trunkGeo.setAttribute('uv2', trunkGeo.attributes.uv.clone());
-  }
-
-  // Fronds: arching palm fronds (16 for high detail, 8 for low detail)
-  const frondCount = isLod ? 8 : 16;
-  const leafGeos: BufferGeometry[] = [];
-  
-  for (let i = 0; i < frondCount; i++) {
-    const angle = (i / frondCount) * Math.PI * 2 + (i % 2 === 0 ? 0.08 : -0.08);
-    const droop = 0.55 + (i % 3) * 0.12;
-    const length = 4.8 + (i % 2) * 0.6;
-    
-    const top = new Vector3(1.3, 14, 0.8);
-    const mid = new Vector3(
-      top.x + Math.cos(angle) * (length * 0.5),
-      top.y + 0.9,
-      top.z + Math.sin(angle) * (length * 0.5)
-    );
-    const tip = new Vector3(
-      top.x + Math.cos(angle) * length,
-      top.y - droop * 2.2,
-      top.z + Math.sin(angle) * length
-    );
-
-    const spine = new CatmullRomCurve3([top, mid, tip]);
-    const segments = isLod ? 5 : 10;
-    const pts = spine.getPoints(segments);
-    
-    const verts: number[] = [];
-    const uvs: number[] = [];
-    const indices: number[] = [];
-
-    for (let s = 0; s <= segments; s++) {
-      const p = pts[s];
-      const t = s / segments;
-      const width = Math.sin(t * Math.PI) * (isLod ? 1.05 : 0.85) + 0.12;
-      const normal = new Vector3(-Math.sin(angle), 0, Math.cos(angle)).normalize();
-      
-      verts.push(p.x - normal.x * width, p.y, p.z - normal.z * width);
-      verts.push(p.x + normal.x * width, p.y, p.z + normal.z * width);
-      uvs.push(0, t, 1, t);
-
-      if (s < segments) {
-        const base = s * 2;
-        indices.push(base, base + 1, base + 2);
-        indices.push(base + 1, base + 3, base + 2);
-      }
-    }
-
-    const frondGeo = new BufferGeometry();
-    frondGeo.setAttribute('position', new Float32BufferAttribute(verts, 3));
-    frondGeo.setAttribute('uv', new Float32BufferAttribute(uvs, 2));
-    frondGeo.setIndex(indices);
-    frondGeo.computeVertexNormals();
-    leafGeos.push(frondGeo);
-  }
-
-  let totalVerts = 0, totalIndices = 0;
-  leafGeos.forEach(g => {
-    totalVerts += g.attributes.position.count;
-    totalIndices += g.index ? g.index.count : 0;
-  });
-
-  const pos = new Float32Array(totalVerts * 3);
-  const uv = new Float32Array(totalVerts * 2);
-  const norm = new Float32Array(totalVerts * 3);
-  const indices = new Uint32Array(totalIndices);
-
-  let vOffset = 0, iOffset = 0, indexVertexOffset = 0;
-  leafGeos.forEach(g => {
-    const p = g.attributes.position.array as Float32Array;
-    pos.set(p, vOffset * 3);
-    if (g.attributes.uv) uv.set(g.attributes.uv.array as Float32Array, vOffset * 2);
-    if (g.attributes.normal) norm.set(g.attributes.normal.array as Float32Array, vOffset * 3);
-
-    if (g.index) {
-      const idx = g.index.array;
-      for (let j = 0; j < idx.length; j++) indices[iOffset + j] = idx[j] + indexVertexOffset;
-      iOffset += idx.length;
-    }
-    indexVertexOffset += g.attributes.position.count;
-    vOffset += g.attributes.position.count;
-  });
-
-  const mergedLeaves = new BufferGeometry();
-  mergedLeaves.setAttribute('position', new BufferAttribute(pos, 3));
-  mergedLeaves.setAttribute('uv', new BufferAttribute(uv, 2));
-  mergedLeaves.setAttribute('normal', new BufferAttribute(norm, 3));
-  mergedLeaves.setIndex(new BufferAttribute(indices, 1));
-
-  return { branches: trunkGeo, leaves: mergedLeaves };
-}
-
 type TreeInstanceData = {
   matrix: import('three').Matrix4;
   leafColor: import('three').Color;
@@ -956,144 +853,79 @@ function TreeBatch({
 }
 
 function CampusTrees({ data, textures, quality }: { data: OsmCampusData; textures: SurfaceTextures; quality: boolean }) {
-  const [treeModels, setTreeModels] = useState<TreeModelPair[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void import('@dgreenheck/ez-tree').then(({ Tree, TreePreset }) => {
-      if (cancelled) return;
-
-      const ezNames = ['Oak Medium', 'Ash Medium', 'Aspen Medium', 'Oak Small'] as const;
-      const models: TreeModelPair[] = ezNames.map(name => {
-        // Near trees: modest leaf count so instancing stays cheap
-        const rawNear = structuredClone((TreePreset as any)[name]);
-        rawNear.leaves.size = 3.6;
-        rawNear.leaves.count = 22;   // reduced from 34 → better perf, still full canopy
-        rawNear.leaves.alphaTest = 0.2;
-
-        const treeNear = new Tree();
-        treeNear.options.copy(rawNear);
-        treeNear.generate();
-
-        const leafMat = treeNear.leavesMesh.material as MeshPhongMaterial;
-        const leafMap = leafMat.map;
-        if (leafMap) {
-          leafMap.colorSpace = SRGBColorSpace;
-          leafMap.needsUpdate = true;
-        }
-
-        const nearBranches = treeNear.branchesMesh.geometry;
-        if (nearBranches.attributes.uv && !nearBranches.attributes.uv2) {
-          nearBranches.setAttribute('uv2', nearBranches.attributes.uv.clone());
-        }
-
-        // Far LOD: minimal geometry
-        const rawFar = structuredClone((TreePreset as any)[name]);
-        rawFar.branch.levels = 1;
-        rawFar.branch.segments = { 0: 4, 1: 3 };
-        rawFar.leaves.size = 4.2;
-        rawFar.leaves.count = 10;
-        rawFar.leaves.alphaTest = 0.2;
-
-        const treeFar = new Tree();
-        treeFar.options.copy(rawFar);
-        treeFar.generate();
-
-        const farBranches = treeFar.branchesMesh.geometry;
-        if (farBranches.attributes.uv && !farBranches.attributes.uv2) {
-          farBranches.setAttribute('uv2', farBranches.attributes.uv.clone());
-        }
-
-        return {
-          nearBranches,
-          nearLeaves: treeNear.leavesMesh.geometry,
-          farBranches,
-          farLeaves: treeFar.leavesMesh.geometry,
-          leafMap: leafMap ?? undefined,
-        };
-      });
-
-      // 5th variant: Procedural Tropical Coconut Palm
-      const nearPalm = createProceduralPalm(false);
-      const farPalm = createProceduralPalm(true);
-      models.push({
-        nearBranches: nearPalm.branches,
-        nearLeaves: nearPalm.leaves,
-        farBranches: farPalm.branches,
-        farLeaves: farPalm.leaves,
-        leafMap: undefined,
-      });
-
-      setTreeModels(models);
+  const treeModels = useMemo<TreeModelPair[]>(() => {
+    return [0, 1, 2, 3].map(variant => {
+      const near = createProceduralBroadleafTree(variant, false);
+      const far = createProceduralBroadleafTree(variant, true);
+      return {
+        nearBranches: near.branches,
+        nearLeaves: near.leaves,
+        farBranches: far.branches,
+        farLeaves: far.leaves,
+      };
     });
-
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   const { nearByVariant, farByVariant } = useMemo(() => {
     // ─────────────────────────────────────────────────────────────────
     // SATELLITE-ACCURATE tree placement for SRM Easwari Engineering College
-    // Positions verified against Google Maps / Bhuvan satellite imagery.
-    // Coordinate system: X = East, Z = South (world origin = OSM campus centroid).
-    // Only plant where satellite shows actual tree canopy.
-    // variant: 0=Oak(large), 1=Ash(tall), 2=Aspen(slender), 3=SmallOak, 4=Palm
+    // Authentic broadleaf shade trees (neem, gulmohar, banyan, tecoma)
+    // 4 distinct procedural variants with tapered trunks and lush gradient canopies.
     // ─────────────────────────────────────────────────────────────────
     const CURATED_TREES: Array<{ x: number; z: number; scale: number; variant: number }> = [
-      // 1. Main Entrance Avenue (from Bharathi Salai towards campus center - coconuts/palms)
-      { x: 5.0, z: -175.0, scale: 0.88, variant: 4 },
-      { x: 18.0, z: -155.0, scale: 0.90, variant: 4 },
-      { x: 30.0, z: -135.0, scale: 0.86, variant: 4 },
-      { x: 65.0, z: -105.0, scale: 0.92, variant: 4 },
-      { x: 60.0, z: -85.0, scale: 0.88, variant: 4 },
-      { x: 75.0, z: -60.0, scale: 0.90, variant: 4 },
-      { x: 90.0, z: -35.0, scale: 0.86, variant: 4 },
-      { x: 105.0, z: -10.0, scale: 0.88, variant: 4 },
+      // 1. Main Entrance Avenue (broadleaf shade trees along avenue)
+      { x: 5.0, z: -175.0, scale: 1.05, variant: 0 },
+      { x: 18.0, z: -155.0, scale: 1.10, variant: 1 },
+      { x: 30.0, z: -135.0, scale: 0.98, variant: 2 },
+      { x: 65.0, z: -105.0, scale: 1.12, variant: 3 },
+      { x: 60.0, z: -85.0, scale: 1.05, variant: 0 },
+      { x: 75.0, z: -60.0, scale: 1.08, variant: 1 },
+      { x: 90.0, z: -35.0, scale: 0.98, variant: 2 },
+      { x: 105.0, z: -10.0, scale: 1.05, variant: 3 },
       
       // 2. North Compound Wall (dense tree canopy line along northern border)
-      { x: -25.0, z: -170.0, scale: 0.38, variant: 0 },
-      { x: 0.0, z: -185.0, scale: 0.39, variant: 1 },
-      { x: 25.0, z: -188.0, scale: 0.37, variant: 2 },
-      { x: 38.0, z: -160.0, scale: 0.38, variant: 3 },
-      { x: 80.0, z: -115.0, scale: 0.39, variant: 0 },
-      { x: 110.0, z: -125.0, scale: 0.37, variant: 1 },
-      { x: 140.0, z: -110.0, scale: 0.38, variant: 2 },
-      { x: 185.0, z: -42.0, scale: 0.39, variant: 3 },
+      { x: -25.0, z: -170.0, scale: 1.02, variant: 0 },
+      { x: 0.0, z: -185.0, scale: 1.08, variant: 1 },
+      { x: 25.0, z: -188.0, scale: 0.96, variant: 2 },
+      { x: 38.0, z: -160.0, scale: 1.04, variant: 3 },
+      { x: 80.0, z: -115.0, scale: 1.10, variant: 0 },
+      { x: 110.0, z: -125.0, scale: 0.98, variant: 1 },
+      { x: 140.0, z: -110.0, scale: 1.05, variant: 2 },
+      { x: 185.0, z: -42.0, scale: 1.08, variant: 3 },
 
       // 3. East Compound Wall (behind Electronics Block & Auditorium)
-      { x: 240.0, z: -30.0, scale: 0.38, variant: 0 },
-      { x: 240.0, z: -5.0, scale: 0.39, variant: 1 },
-      { x: 246.0, z: 75.0, scale: 0.88, variant: 4 },
-      { x: 238.0, z: 65.0, scale: 0.38, variant: 2 },
-      { x: 230.0, z: 105.0, scale: 0.37, variant: 3 },
-      { x: 220.0, z: 140.0, scale: 0.39, variant: 1 },
-      { x: 215.0, z: 195.0, scale: 0.38, variant: 0 },
+      { x: 240.0, z: -30.0, scale: 1.04, variant: 0 },
+      { x: 240.0, z: -5.0, scale: 1.08, variant: 1 },
+      { x: 246.0, z: 75.0, scale: 1.02, variant: 2 },
+      { x: 238.0, z: 65.0, scale: 0.98, variant: 3 },
+      { x: 230.0, z: 105.0, scale: 1.05, variant: 0 },
+      { x: 220.0, z: 140.0, scale: 1.10, variant: 1 },
+      { x: 215.0, z: 195.0, scale: 1.02, variant: 2 },
 
       // 4. South Compound Wall (behind Main Block, Civil Block & Hostels)
-      { x: 145.0, z: 188.0, scale: 0.38, variant: 1 },
-      { x: 75.0, z: 195.0, scale: 0.39, variant: 2 },
-      { x: -5.0, z: 192.0, scale: 0.37, variant: 3 },
-      { x: -40.0, z: 190.0, scale: 0.38, variant: 0 },
-      { x: -75.0, z: 192.0, scale: 0.39, variant: 1 },
-      { x: -160.0, z: 168.0, scale: 0.37, variant: 2 },
-      { x: -225.0, z: 156.0, scale: 0.88, variant: 4 },
+      { x: 145.0, z: 188.0, scale: 1.06, variant: 1 },
+      { x: 75.0, z: 195.0, scale: 1.12, variant: 2 },
+      { x: -5.0, z: 192.0, scale: 0.98, variant: 3 },
+      { x: -40.0, z: 190.0, scale: 1.04, variant: 0 },
+      { x: -75.0, z: 192.0, scale: 1.08, variant: 1 },
+      { x: -160.0, z: 168.0, scale: 0.96, variant: 2 },
+      { x: -225.0, z: 156.0, scale: 1.05, variant: 3 },
 
       // 5. West Perimeter (behind Workshops and Sports Ground boundary)
-      { x: -240.0, z: 135.0, scale: 0.38, variant: 0 },
-      { x: -228.0, z: 85.0, scale: 0.39, variant: 1 },
-      { x: -170.0, z: 68.0, scale: 0.37, variant: 2 },
-      { x: -155.0, z: 30.0, scale: 0.38, variant: 3 },
-      { x: -135.0, z: 15.0, scale: 0.39, variant: 0 },
+      { x: -240.0, z: 135.0, scale: 1.02, variant: 0 },
+      { x: -228.0, z: 85.0, scale: 1.08, variant: 1 },
+      { x: -170.0, z: 68.0, scale: 0.98, variant: 2 },
+      { x: -155.0, z: 30.0, scale: 1.05, variant: 3 },
+      { x: -135.0, z: 15.0, scale: 1.10, variant: 0 },
 
       // 6. Courtyard Lawns & Gardens (authentic shade trees in open green spaces)
-      { x: 15.0, z: 32.0, scale: 0.36, variant: 0 },
-      { x: 25.0, z: 25.0, scale: 0.37, variant: 3 },
-      { x: 50.0, z: 5.0, scale: 0.38, variant: 1 },
-      { x: 70.0, z: 8.0, scale: 0.36, variant: 2 },
-      { x: -30.0, z: 78.0, scale: 0.38, variant: 0 },
-      { x: -60.0, z: 75.0, scale: 0.37, variant: 1 },
-      { x: -80.0, z: 75.0, scale: 0.38, variant: 2 },
+      { x: 15.0, z: 32.0, scale: 0.95, variant: 0 },
+      { x: 25.0, z: 25.0, scale: 0.98, variant: 3 },
+      { x: 50.0, z: 5.0, scale: 1.02, variant: 1 },
+      { x: 70.0, z: 8.0, scale: 0.96, variant: 2 },
+      { x: -30.0, z: 78.0, scale: 1.04, variant: 0 },
+      { x: -60.0, z: 75.0, scale: 1.00, variant: 1 },
+      { x: -80.0, z: 75.0, scale: 1.02, variant: 2 },
     ];
 
     const allBuildings = [
@@ -1128,8 +960,8 @@ function CampusTrees({ data, textures, quality }: { data: OsmCampusData; texture
       return true;
     };
 
-    const nearByVariant: TreeInstanceData[][] = [[], [], [], [], []];
-    const farByVariant: TreeInstanceData[][] = [[], [], [], [], []];
+    const nearByVariant: TreeInstanceData[][] = [[], [], [], []];
+    const farByVariant: TreeInstanceData[][] = [[], [], [], []];
     const dummy = new Object3D();
 
     const baseLeafTints = [
@@ -1137,7 +969,6 @@ function CampusTrees({ data, textures, quality }: { data: OsmCampusData; texture
       new Color('#4b7c2f'),
       new Color('#46752d'),
       new Color('#396522'),
-      new Color('#3a7628'),
     ];
 
     CURATED_TREES.forEach((t, i) => {
@@ -1156,7 +987,8 @@ function CampusTrees({ data, textures, quality }: { data: OsmCampusData; texture
       dummy.scale.set(sX, sY, sZ);
       dummy.updateMatrix();
 
-      const leafColor = baseLeafTints[t.variant].clone().offsetHSL(
+      const varIdx = t.variant % 4;
+      const leafColor = baseLeafTints[varIdx].clone().offsetHSL(
         (pHash - 0.5) * 0.04,
         (pHash2 - 0.5) * 0.06,
         (pHash - 0.5) * 0.05
@@ -1170,9 +1002,9 @@ function CampusTrees({ data, textures, quality }: { data: OsmCampusData; texture
 
       const distCenter = Math.hypot(t.x - 38, t.z - 68);
       if (distCenter <= 100) {
-        nearByVariant[t.variant].push(instData);
+        nearByVariant[varIdx].push(instData);
       } else {
-        farByVariant[t.variant].push(instData);
+        farByVariant[varIdx].push(instData);
       }
     });
 
@@ -1203,24 +1035,17 @@ function CampusTrees({ data, textures, quality }: { data: OsmCampusData; texture
   }, [textures]);
 
   const leafMats = useMemo(() => {
-    const tints = ['#427330', '#3b7428', '#44782e', '#366c22', '#2f6820'];
-    return tints.map((tint, idx) => {
-      const model = treeModels[idx];
+    const tints = ['#ffffff', '#f4fff0', '#eefbf2', '#fafff2'];
+    return tints.map(tint => {
       return new MeshStandardMaterial({
-        map: model?.leafMap,
         color: new Color(tint),
-        alphaTest: idx === 4 ? 0.0 : 0.2,
-        alphaToCoverage: false,
-        transparent: false,
-        depthWrite: true,
-        side: DoubleSide,
-        roughness: 0.78,
+        vertexColors: true,
+        roughness: 0.76,
         metalness: 0.02,
+        side: DoubleSide,
       });
     });
-  }, [treeModels]);
-
-  if (treeModels.length < 5) return null;
+  }, []);
 
   return (
     <group>
@@ -2320,8 +2145,6 @@ export function CampusWorld({
   onSelectNode,
   affectedNodeIds = [],
   whatIfNodeIds = [],
-  panelOpen,
-  onTogglePanel,
   interiorMode: propInteriorMode,
   onInteriorModeChange,
   interiorBlockId: propInteriorBlockId,
@@ -2359,10 +2182,16 @@ export function CampusWorld({
     'PG-402-PROJ': 'none'
   });
   const [showSimPanel, setShowSimPanel] = useState(true);
-  const [showDashboardEmbed, setShowDashboardEmbed] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [simPanelTab, setSimPanelTab] = useState<'status' | 'connection'>('status');
   const [selectedSimDeviceId, setSelectedSimDeviceId] = useState<string>('PG-201-PROJ');
   const [noiseEnabled, setNoiseEnabled] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => setToastMessage(null), 3500);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
 
   const handleSetProjectorFault = useCallback((deviceId: string, fault: FaultType) => {
     projectorSim.setFault(deviceId, fault, simDay);
@@ -2607,7 +2436,11 @@ export function CampusWorld({
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'SELECT') return;
       if (e.key === 'Escape') {
-        if (interiorMode === 'diorama') {
+        if (facadePanelOpen) {
+          setFacadePanelOpen(false);
+        } else if (showSimPanel && isPGView) {
+          setShowSimPanel(false);
+        } else if (interiorMode === 'diorama') {
           setInteriorMode('cutaway');
           if (typeof window !== 'undefined') {
             const url = new URL(window.location.href);
@@ -2627,6 +2460,8 @@ export function CampusWorld({
             url.searchParams.delete('lab');
             window.history.replaceState(null, '', url.toString());
           }
+        } else if (selectedNodeId || currentBuildingId) {
+          handleOverview();
         }
       }
       else if (e.key === 'i' || e.key === 'I') {
@@ -2659,7 +2494,7 @@ export function CampusWorld({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleOverview, handleSelectNode, interiorMode, currentBuildingId, interiorBlockId, enterBlockCutaway, setInteriorMode]);
+  }, [handleOverview, handleSelectNode, interiorMode, currentBuildingId, interiorBlockId, enterBlockCutaway, setInteriorMode, facadePanelOpen, showSimPanel, isPGView, selectedNodeId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2748,7 +2583,86 @@ export function CampusWorld({
             facadeAdjustments={facadeAdjustments} onPhotoStatus={handlePhotoStatus} /></Suspense>
         )}
     </Canvas>
-    <div className="world-top"><div className="world-brand"><span className="brand-dot" />SRM EASWARI <i>·</i> {alignment ? 'ALIGNMENT' : interiorMode === 'cutaway' ? `${currentBlock.displayName.toUpperCase()} CUTAWAY` : interiorMode === 'diorama' ? `${currentRoom.displayName} (${currentRoom.type.toUpperCase()})` : 'CAMPUS OPERATIONS'}
+    <div className="world-top"><div className="world-brand">
+      {interiorMode === 'diorama' ? (
+        <button
+          className="top-nav-btn"
+          onClick={() => {
+            setInteriorMode('cutaway');
+            if (typeof window !== 'undefined') {
+              const url = new URL(window.location.href);
+              url.searchParams.set('view', 'cutaway');
+              url.searchParams.set('block', currentBlock.blockId);
+              url.searchParams.delete('room');
+              url.searchParams.delete('lab');
+              window.history.replaceState(null, '', url.toString());
+            }
+          }}
+          title="Back to Cutaway view (Esc)"
+          style={{
+            marginRight: 10,
+            padding: '4px 10px',
+            fontSize: 11,
+            fontWeight: 700,
+            background: '#1e293b',
+            color: '#38bdf8',
+            border: '1px solid #0284c7',
+            borderRadius: 6,
+            cursor: 'pointer'
+          }}
+        >
+          ← Back to {currentBlock.displayName} cutaway
+        </button>
+      ) : interiorMode === 'cutaway' ? (
+        <button
+          className="top-nav-btn"
+          onClick={() => {
+            setInteriorMode('campus');
+            if (typeof window !== 'undefined') {
+              const url = new URL(window.location.href);
+              url.searchParams.delete('view');
+              url.searchParams.delete('block');
+              url.searchParams.delete('room');
+              url.searchParams.delete('lab');
+              window.history.replaceState(null, '', url.toString());
+            }
+          }}
+          title="Back to Campus view (Esc)"
+          style={{
+            marginRight: 10,
+            padding: '4px 10px',
+            fontSize: 11,
+            fontWeight: 700,
+            background: '#1e293b',
+            color: '#38bdf8',
+            border: '1px solid #0284c7',
+            borderRadius: 6,
+            cursor: 'pointer'
+          }}
+        >
+          ← Back to Campus
+        </button>
+      ) : (
+        <button
+          className="top-nav-btn"
+          onClick={handleOverview}
+          title="Campus Overview (Esc or R)"
+          style={{
+            marginRight: 10,
+            padding: '4px 10px',
+            fontSize: 11,
+            fontWeight: 700,
+            background: '#1c2e28',
+            color: '#86efac',
+            border: '1px solid #22c55e',
+            borderRadius: 6,
+            cursor: 'pointer'
+          }}
+        >
+          🏛️ Overview
+        </button>
+      )}
+      <span className="brand-dot" />SRM EASWARI <i>·</i> {alignment ? 'ALIGNMENT' : interiorMode === 'cutaway' ? `${currentBlock.displayName.toUpperCase()} CUTAWAY` : interiorMode === 'diorama' ? `${currentRoom.displayName} (${currentRoom.type.toUpperCase()})` : 'CAMPUS OPERATIONS'}
       {(interiorMode === 'cutaway' || interiorMode === 'diorama') && (
         <span className="demo-badge">Demo layout</span>
       )}
@@ -2778,10 +2692,9 @@ export function CampusWorld({
             }
           }}>🏛️ Campus View</button>
           {isPGView && <button onClick={() => setShowSimPanel(v => !v)} style={{ background: showSimPanel ? '#0284c7' : '#1e293b', borderColor: '#38bdf8' }}>{showSimPanel ? 'Hide Sim' : '⚡ Sim Panel'}</button>}
-          <button onClick={() => setShowDashboardEmbed(v => !v)} style={{ background: showDashboardEmbed ? '#4338ca' : '#312e81', borderColor: '#818cf8', fontWeight: 700 }}>{showDashboardEmbed ? '✕ Hide Dashboard' : '📊 Dashboard (5173)'}</button>
+          <button onClick={() => openDashboard(msg => setToastMessage(msg))} style={{ background: '#4338ca', borderColor: '#818cf8', fontWeight: 700, color: '#ffffff', cursor: 'pointer' }}>📊 Dashboard</button>
           <button onClick={downloadRegistryFiles}>📥 Export Registry</button>
           <button onClick={() => setNight(v => !v)}>{night ? '☾ Night' : '☼ Daylight'}</button>
-          {onTogglePanel && <button onClick={onTogglePanel} style={{ background: panelOpen ? '#274b3d' : undefined }}>{panelOpen ? '📋 Operations ◧' : '📋 Operations ◨'}</button>}
         </>
       ) : interiorMode === 'cutaway' ? (
         <>
@@ -2797,11 +2710,10 @@ export function CampusWorld({
             }
           }}>← Campus (ESC)</button>
           {isPGView && <button onClick={() => setShowSimPanel(v => !v)} style={{ background: showSimPanel ? '#0284c7' : '#1e293b', borderColor: '#38bdf8' }}>{showSimPanel ? 'Hide Sim' : '⚡ Sim Panel'}</button>}
-          <button onClick={() => setShowDashboardEmbed(v => !v)} style={{ background: showDashboardEmbed ? '#4338ca' : '#312e81', borderColor: '#818cf8', fontWeight: 700 }}>{showDashboardEmbed ? '✕ Hide Dashboard' : '📊 Dashboard (5173)'}</button>
+          <button onClick={() => openDashboard(msg => setToastMessage(msg))} style={{ background: '#4338ca', borderColor: '#818cf8', fontWeight: 700, color: '#ffffff', cursor: 'pointer' }}>📊 Dashboard</button>
           <button onClick={downloadRegistryFiles}>📥 Export Registry</button>
           <button onClick={() => setNight(v => !v)}>{night ? '☾ Night' : '☼ Daylight'}</button>
           <button onClick={() => setQuality(v => !v)}>{quality ? '✨ Perf: Quality' : '⚡ Perf: Fast'}</button>
-          {onTogglePanel && <button onClick={onTogglePanel} style={{ background: panelOpen ? '#274b3d' : undefined }}>{panelOpen ? '📋 Operations ◧' : '📋 Operations ◨'}</button>}
         </>
       ) : (
         <>
@@ -2831,68 +2743,52 @@ export function CampusWorld({
           <button onClick={() => setFacadePanelOpen(v => !v)} style={{ background: facadePanelOpen ? '#435e50' : undefined }}>
             {facadePanelOpen ? 'Close Facade' : '📷 Facade Tool'}
           </button>
-          <button onClick={() => setShowDashboardEmbed(v => !v)} style={{ background: showDashboardEmbed ? '#4338ca' : '#312e81', borderColor: '#818cf8', fontWeight: 700 }}>{showDashboardEmbed ? '✕ Hide Dashboard' : '📊 Dashboard (5173)'}</button>
+          <button onClick={() => openDashboard(msg => setToastMessage(msg))} style={{ background: '#4338ca', borderColor: '#818cf8', fontWeight: 700, color: '#ffffff', cursor: 'pointer' }}>📊 Dashboard</button>
           <button onClick={downloadRegistryFiles} title="Export campusRegistry.json & rooms.csv">
             📥 Export Registry
           </button>
-          {onTogglePanel && <button onClick={onTogglePanel} style={{ background: panelOpen ? '#274b3d' : undefined }}>{panelOpen ? '📋 Operations ◧' : '📋 Operations ◨'}</button>}
           </>}
         </>
       )}
     </div></div>
-    {showDashboardEmbed && (
-      <div style={{
-        position: 'absolute',
-        top: 54,
-        right: 16,
-        width: '680px',
-        maxWidth: 'calc(100vw - 32px)',
-        height: 'calc(100vh - 120px)',
-        background: '#090d16',
-        border: '2px solid #6366f1',
-        borderRadius: 12,
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.85)',
-        zIndex: 9999,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden'
-      }}>
-        <div style={{
-          padding: '8px 12px',
-          background: '#1e1b4b',
-          borderBottom: '1px solid #3730a3',
+    {toastMessage && (
+      <div
+        className="campus-toast"
+        style={{
+          position: 'fixed',
+          top: 60,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: '#991b1b',
+          color: '#ffffff',
+          padding: '8px 18px',
+          borderRadius: 8,
+          border: '1px solid #f87171',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+          zIndex: 10000,
+          fontWeight: 600,
+          fontSize: 13,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          color: '#ffffff',
-          fontSize: 12,
-          fontWeight: 600
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>📊 CampusOps Platform · Operational Ledger (Port 5173)</span>
-            <span style={{ fontSize: 9.5, background: '#10b981', color: '#ffffff', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>ONLINE</span>
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              onClick={() => window.open('http://localhost:5173', '_blank')}
-              style={{ background: '#4f46e5', color: '#ffffff', border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}
-              title="Open full screen in a new browser tab"
-            >
-              Open Tab ↗
-            </button>
-            <button
-              onClick={() => setShowDashboardEmbed(false)}
-              style={{ background: '#334155', color: '#ffffff', border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 10, cursor: 'pointer' }}
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-        <iframe
-          src="http://localhost:5173"
-          style={{ width: '100%', height: '100%', border: 'none' }}
-          title="CampusOps Dashboard"
-        />
+          gap: 8,
+          pointerEvents: 'auto'
+        }}
+      >
+        <span>⚠️</span>
+        <span>{toastMessage}</span>
+        <button
+          onClick={() => setToastMessage(null)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: '#fca5a5',
+            fontWeight: 700,
+            cursor: 'pointer',
+            marginLeft: 8
+          }}
+        >
+          ✕
+        </button>
       </div>
     )}
     {showSimPanel && isPGView && (
@@ -2909,6 +2805,7 @@ export function CampusWorld({
         onSelectDevice={setSelectedSimDeviceId}
         noiseEnabled={noiseEnabled}
         onToggleNoise={setNoiseEnabled}
+        onClose={() => setShowSimPanel(false)}
       />
     )}
     <TelemetryOverlay show={showStats && !alignment} quality={quality} />
