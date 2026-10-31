@@ -26,6 +26,7 @@ interface DioramaProps {
   prediction?: DevicePrediction;
   onBack: () => void;
   night?: boolean;
+  onSelectProjector?: (deviceId: string) => void;
 }
 
 // Room dimensions in meters
@@ -34,7 +35,7 @@ const ROOM_D = 7.0;
 const ROOM_H = 3.2;
 const WALL_THICK = 0.23;
 
-export function ClassroomDiorama({ room, equipment, prediction, onBack, night = false }: DioramaProps) {
+export function ClassroomDiorama({ room, equipment, prediction, onBack, night = false, onSelectProjector }: DioramaProps) {
   const [hoveredEquip, setHoveredEquip] = useState<RegistryEquipment | null>(null);
 
   const { camera } = useThree();
@@ -306,6 +307,12 @@ export function ClassroomDiorama({ room, equipment, prediction, onBack, night = 
             {/* 1. Ceiling Projector */}
             <group
               position={[0, 2.85, -0.6]}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (projector) {
+                  onSelectProjector?.(projector.equipmentId);
+                }
+              }}
               onPointerOver={(e) => { e.stopPropagation(); if (projector) setHoveredEquip(projector); }}
               onPointerOut={() => setHoveredEquip(null)}
             >

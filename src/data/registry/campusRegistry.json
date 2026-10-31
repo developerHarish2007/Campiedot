@@ -437,7 +437,7 @@
         "PG-A101",
         "PG-001"
       ],
-      "hasEquipment": false,
+      "hasEquipment": true,
       "source": "demo",
       "createdAt": "2026-10-31T00:00:00Z"
     },
@@ -1774,6 +1774,19 @@
     }
   ],
   "equipment": [
+    {
+      "equipmentId": "PG-001-PROJ",
+      "roomId": "PG-001",
+      "blockId": "PG",
+      "type": "PROJECTOR",
+      "displayName": "Ceiling Multimedia Projector",
+      "nodeId": "equip-pg-001-proj",
+      "aliases": [],
+      "status": "OPERATIONAL",
+      "healthScore": 0.95,
+      "source": "demo",
+      "createdAt": "2026-10-31T00:00:00Z"
+    },
     {
       "equipmentId": "PG-201-PROJ",
       "roomId": "PG-201",

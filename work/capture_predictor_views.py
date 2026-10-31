@@ -55,3 +55,4 @@ def capture_predictor_views():
 
 if __name__ == '__main__':
     capture_predictor_views()
+
