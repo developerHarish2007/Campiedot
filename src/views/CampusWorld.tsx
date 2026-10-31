@@ -2359,6 +2359,7 @@ export function CampusWorld({
     'PG-402-PROJ': 'none'
   });
   const [showSimPanel, setShowSimPanel] = useState(true);
+  const [showDashboardEmbed, setShowDashboardEmbed] = useState(false);
   const [simPanelTab, setSimPanelTab] = useState<'status' | 'connection'>('status');
   const [selectedSimDeviceId, setSelectedSimDeviceId] = useState<string>('PG-201-PROJ');
   const [noiseEnabled, setNoiseEnabled] = useState<boolean>(false);
@@ -2777,6 +2778,7 @@ export function CampusWorld({
             }
           }}>🏛️ Campus View</button>
           {isPGView && <button onClick={() => setShowSimPanel(v => !v)} style={{ background: showSimPanel ? '#0284c7' : '#1e293b', borderColor: '#38bdf8' }}>{showSimPanel ? 'Hide Sim' : '⚡ Sim Panel'}</button>}
+          <button onClick={() => setShowDashboardEmbed(v => !v)} style={{ background: showDashboardEmbed ? '#4338ca' : '#312e81', borderColor: '#818cf8', fontWeight: 700 }}>{showDashboardEmbed ? '✕ Hide Dashboard' : '📊 Dashboard (5173)'}</button>
           <button onClick={downloadRegistryFiles}>📥 Export Registry</button>
           <button onClick={() => setNight(v => !v)}>{night ? '☾ Night' : '☼ Daylight'}</button>
           {onTogglePanel && <button onClick={onTogglePanel} style={{ background: panelOpen ? '#274b3d' : undefined }}>{panelOpen ? '📋 Operations ◧' : '📋 Operations ◨'}</button>}
@@ -2795,6 +2797,7 @@ export function CampusWorld({
             }
           }}>← Campus (ESC)</button>
           {isPGView && <button onClick={() => setShowSimPanel(v => !v)} style={{ background: showSimPanel ? '#0284c7' : '#1e293b', borderColor: '#38bdf8' }}>{showSimPanel ? 'Hide Sim' : '⚡ Sim Panel'}</button>}
+          <button onClick={() => setShowDashboardEmbed(v => !v)} style={{ background: showDashboardEmbed ? '#4338ca' : '#312e81', borderColor: '#818cf8', fontWeight: 700 }}>{showDashboardEmbed ? '✕ Hide Dashboard' : '📊 Dashboard (5173)'}</button>
           <button onClick={downloadRegistryFiles}>📥 Export Registry</button>
           <button onClick={() => setNight(v => !v)}>{night ? '☾ Night' : '☼ Daylight'}</button>
           <button onClick={() => setQuality(v => !v)}>{quality ? '✨ Perf: Quality' : '⚡ Perf: Fast'}</button>
@@ -2828,6 +2831,7 @@ export function CampusWorld({
           <button onClick={() => setFacadePanelOpen(v => !v)} style={{ background: facadePanelOpen ? '#435e50' : undefined }}>
             {facadePanelOpen ? 'Close Facade' : '📷 Facade Tool'}
           </button>
+          <button onClick={() => setShowDashboardEmbed(v => !v)} style={{ background: showDashboardEmbed ? '#4338ca' : '#312e81', borderColor: '#818cf8', fontWeight: 700 }}>{showDashboardEmbed ? '✕ Hide Dashboard' : '📊 Dashboard (5173)'}</button>
           <button onClick={downloadRegistryFiles} title="Export campusRegistry.json & rooms.csv">
             📥 Export Registry
           </button>
@@ -2836,6 +2840,61 @@ export function CampusWorld({
         </>
       )}
     </div></div>
+    {showDashboardEmbed && (
+      <div style={{
+        position: 'absolute',
+        top: 54,
+        right: 16,
+        width: '680px',
+        maxWidth: 'calc(100vw - 32px)',
+        height: 'calc(100vh - 120px)',
+        background: '#090d16',
+        border: '2px solid #6366f1',
+        borderRadius: 12,
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.85)',
+        zIndex: 9999,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden'
+      }}>
+        <div style={{
+          padding: '8px 12px',
+          background: '#1e1b4b',
+          borderBottom: '1px solid #3730a3',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          color: '#ffffff',
+          fontSize: 12,
+          fontWeight: 600
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>📊 CampusOps Platform · Operational Ledger (Port 5173)</span>
+            <span style={{ fontSize: 9.5, background: '#10b981', color: '#ffffff', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>ONLINE</span>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={() => window.open('http://localhost:5173', '_blank')}
+              style={{ background: '#4f46e5', color: '#ffffff', border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}
+              title="Open full screen in a new browser tab"
+            >
+              Open Tab ↗
+            </button>
+            <button
+              onClick={() => setShowDashboardEmbed(false)}
+              style={{ background: '#334155', color: '#ffffff', border: 'none', borderRadius: 4, padding: '3px 8px', fontSize: 10, cursor: 'pointer' }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+        <iframe
+          src="http://localhost:5173"
+          style={{ width: '100%', height: '100%', border: 'none' }}
+          title="CampusOps Dashboard"
+        />
+      </div>
+    )}
     {showSimPanel && isPGView && (
       <ProjectorSimPanel
         currentDay={simDay}

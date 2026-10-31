@@ -482,11 +482,29 @@ export function ProjectorSimPanel({
                   <div style={{ marginTop: 8, padding: '10px 12px', background: '#090d16', borderRadius: 8, border: '1px solid #334155' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <span>🔗</span> CampusOps Dashboard Bridge
+                        <span>🔗</span> CampusOps Dashboard
                       </span>
-                      <span style={{ fontSize: 9.5, padding: '2px 6px', borderRadius: 4, background: '#1e293b', color: '#94a3b8', fontFamily: 'monospace' }}>
-                        Room: {targetRoomId} ({dashboardBridge.toTheirRoomId(targetRoomId)})
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <button
+                          onClick={() => window.open('http://localhost:5173', '_blank')}
+                          style={{
+                            fontSize: 9.5,
+                            padding: '3px 8px',
+                            borderRadius: 4,
+                            background: '#4f46e5',
+                            color: '#ffffff',
+                            fontWeight: 700,
+                            border: 'none',
+                            cursor: 'pointer'
+                          }}
+                          title="Open http://localhost:5173 in a new tab"
+                        >
+                          Open Dashboard (5173) ↗
+                        </button>
+                        <span style={{ fontSize: 9.5, padding: '2px 6px', borderRadius: 4, background: '#1e293b', color: '#94a3b8', fontFamily: 'monospace' }}>
+                          Room: {targetRoomId}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Student Report Simulation Controls */}
