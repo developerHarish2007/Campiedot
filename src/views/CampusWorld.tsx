@@ -1523,11 +1523,11 @@ function GLBBuilding({ src, record, height, onSelect }: { src: string; record: O
   return <group position={[record.centroid.x, 0, record.centroid.z]} scale={clone.scale} onClick={e => { e.stopPropagation(); if (record.campusNodeId) onSelect?.(record.campusNodeId); }}><primitive object={clone.root} /></group>;
 }
 function Building({
-  record, nodes, selectedNodeId, affected, whatIf, onSelect, onDoubleClick, scanActive, quality, night, textures,
+  record, nodes, selectedNodeId, affected, whatIf, onSelect, onDoubleClick, onEnterBuilding, scanActive, quality, night, textures,
   adjustment, onPhotoStatus
 }: {
   record: OsmBuilding; nodes: CampusNode[]; selectedNodeId?: string; affected: boolean; whatIf: boolean;
-  onSelect?: (id: string) => void; onDoubleClick?: (id: string) => void; scanActive: boolean; quality: boolean; night: boolean; textures: SurfaceTextures;
+  onSelect?: (id: string) => void; onDoubleClick?: (id: string) => void; onEnterBuilding?: (id: string) => void; scanActive: boolean; quality: boolean; night: boolean; textures: SurfaceTextures;
   adjustment?: FacadeAdjustment; onPhotoStatus?: (id: string, hasPhoto: boolean, edgeCount: number) => void;
 }) {
   const node = nodeFor(record, nodes);
@@ -1607,9 +1607,45 @@ function Building({
     >
       <meshBasicMaterial colorWrite={false} depthWrite={false} transparent opacity={0} side={DoubleSide} />
     </mesh>
-    {node?.name && <Billboard position={[record.centroid.x, height + 1.4, record.centroid.z]} follow lockX={false} lockY={false} lockZ={false}>
-      <Text fontSize={1.6} maxWidth={Math.min(record.widthMeters, 18)} color="#fff7e8" outlineWidth={.06} outlineColor="#35413c" anchorX="center" anchorY="middle">{node.name.toUpperCase()}</Text>
-    </Billboard>}
+    {node?.name && (
+      <Billboard
+        position={[record.centroid.x, height + 2.2, record.centroid.z]}
+        follow
+        lockX={false}
+        lockY={false}
+        lockZ={false}
+      >
+        <mesh
+          position={[0, 0, 0.1]}
+          onClick={e => {
+            e.stopPropagation();
+            onEnterBuilding?.(id);
+          }}
+          onPointerOver={() => { document.body.style.cursor = 'pointer'; }}
+          onPointerOut={() => { document.body.style.cursor = ''; }}
+        >
+          <planeGeometry args={[Math.min(record.widthMeters, 20) + 6.0, 4.5]} />
+          <meshBasicMaterial transparent opacity={0} side={DoubleSide} depthWrite={false} />
+        </mesh>
+        <Text
+          fontSize={1.6}
+          maxWidth={Math.min(record.widthMeters, 18)}
+          color="#fff7e8"
+          outlineWidth={.06}
+          outlineColor="#35413c"
+          anchorX="center"
+          anchorY="middle"
+          onClick={e => {
+            e.stopPropagation();
+            onEnterBuilding?.(id);
+          }}
+          onPointerOver={() => { document.body.style.cursor = 'pointer'; }}
+          onPointerOut={() => { document.body.style.cursor = ''; }}
+        >
+          {node.name.toUpperCase()}
+        </Text>
+      </Billboard>
+    )}
   </group>;
 }
 
@@ -2006,10 +2042,11 @@ function SceneStats() {
   });
   return null;
 }
-function Scene({ night, quality, walkMode, setWalkMode, controls, introDone, setIntroFinished, data, snapshot, selectedNodeId, onSelectNode, onDoubleClickBuilding, viewCommand, affectedNodeIds, whatIfNodeIds, showDependencies, scanPath, facadeAdjustments, onPhotoStatus }: {
+function Scene({ night, quality, walkMode, setWalkMode, controls, introDone, setIntroFinished, data, snapshot, selectedNodeId, onSelectNode, onDoubleClickBuilding, onEnterBuilding, viewCommand, affectedNodeIds, whatIfNodeIds, showDependencies, scanPath, facadeAdjustments, onPhotoStatus }: {
   night: boolean; quality: boolean; walkMode: boolean; setWalkMode: (v: boolean) => void; controls: RefObject<any>; introDone: RefObject<boolean>; setIntroFinished: (v: boolean) => void; data: OsmCampusData;
   snapshot?: CampusMapStatusResponse | null; selectedNodeId?: string; onSelectNode?: (id: string) => void;
   onDoubleClickBuilding?: (id: string) => void;
+  onEnterBuilding?: (id: string) => void;
   viewCommand: ViewCommand;
   affectedNodeIds: string[]; whatIfNodeIds: string[]; showDependencies: boolean; scanPath: string | null;
   facadeAdjustments: Record<string, FacadeAdjustment>;
@@ -2036,6 +2073,7 @@ function Scene({ night, quality, walkMode, setWalkMode, controls, introDone, set
         selectedNodeId={selectedNodeId} affected={!!record.campusNodeId && affectedNodeIds.includes(record.campusNodeId)}
         whatIf={!!record.campusNodeId && whatIfNodeIds.includes(record.campusNodeId)} onSelect={onSelectNode}
         onDoubleClick={onDoubleClickBuilding}
+        onEnterBuilding={onEnterBuilding}
         scanActive={false} quality={quality} night={night} textures={textures}
         adjustment={facadeAdjustments[id]} onPhotoStatus={onPhotoStatus} />;
     })}
@@ -2342,6 +2380,16 @@ export function CampusWorld({
     }
   }, [propOnEnterBuilding, enterBlockCutaway]);
 
+  const selectedBlock = useMemo(() => {
+    if (!selectedNodeId) return null;
+    return getBlockByNodeId(selectedNodeId) ?? getBlock(selectedNodeId);
+  }, [selectedNodeId]);
+
+  const selectedBlockRooms = useMemo(() => {
+    if (!selectedBlock) return [];
+    return getRoomsForBlock(selectedBlock.blockId);
+  }, [selectedBlock]);
+
   const currentBlock = useMemo(() => getBlock(interiorBlockId) ?? getBlock('PG')!, [interiorBlockId]);
   const currentRoom = useMemo(() => getRoom(interiorRoomId) ?? getRoom('PG-001')!, [interiorRoomId]);
   const currentBlockRooms = useMemo(() => getRoomsForBlock(currentBlock.blockId), [currentBlock]);
@@ -2425,6 +2473,21 @@ export function CampusWorld({
       }
     }
   }, [walkMode, onSelectNode]);
+
+  const handleEnterBuildingFromLabel = useCallback((nodeIdOrWayId: string) => {
+    handleSelectNode(nodeIdOrWayId);
+    const blk = getBlockByNodeId(nodeIdOrWayId) ?? getBlock(nodeIdOrWayId);
+    if (blk) {
+      const rooms = getRoomsForBlock(blk.blockId);
+      if (rooms.length > 0) {
+        if (propOnEnterBuilding) {
+          propOnEnterBuilding(blk.blockId);
+        } else {
+          enterBlockCutaway(blk.blockId);
+        }
+      }
+    }
+  }, [handleSelectNode, propOnEnterBuilding, enterBlockCutaway]);
 
   const handleOverview = useCallback(() => {
     if (walkMode) setWalkMode(false);
@@ -2524,7 +2587,7 @@ export function CampusWorld({
   return <div className="world-wrap">
     <Canvas key={alignment?'alignment':interiorMode} orthographic={alignment} shadows={!alignment} dpr={[1, quality ? 1.2 : 1.0]} camera={alignment ? { position: [0, 900, 0], zoom: 1, near: .1, far: 2000 } : interiorMode === 'cutaway' ? { position: [54, 38, 54], fov: 45, near: 0.1, far: 500 } : interiorMode === 'diorama' ? { position: [3.3, 2.4, 3.2], fov: 48, near: 0.1, far: 50 } : { position: [45, 580, 560], fov: 52, near: .1, far: 1400 }}
       gl={{ antialias: quality, powerPreference: 'high-performance', toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.03, outputColorSpace: SRGBColorSpace }}
-      onCreated={({ gl, scene }) => { gl.toneMapping = ACESFilmicToneMapping; gl.toneMappingExposure = 1.04; gl.outputColorSpace = SRGBColorSpace; gl.shadowMap.enabled = true; gl.shadowMap.type = PCFSoftShadowMap; gl.info.autoReset = true; (window as any).__SCENE__ = scene; (window as any).__GL__ = gl; }} style={style}>
+      onCreated={({ gl, scene, camera }) => { gl.toneMapping = ACESFilmicToneMapping; gl.toneMappingExposure = 1.04; gl.outputColorSpace = SRGBColorSpace; gl.shadowMap.enabled = true; gl.shadowMap.type = PCFSoftShadowMap; gl.info.autoReset = true; (window as any).__SCENE__ = scene; (window as any).__GL__ = gl; (window as any).__CAMERA__ = camera; }} style={style}>
       {alignment ? <AlignmentScene data={data} assignments={footprintNames} selectedWay={selectedWay} hoveredWay={hoveredWay} setHoveredWay={setHoveredWay} showAllLabels={showAllLabels} onSelect={setSelectedWay} measure={measure} points={measurePoints} onMeasure={p=>setMeasurePoints(old=>old.length===2?[p]:[...old,p])} /> :
         interiorMode === 'cutaway' ? (
           <BuildingCutaway
@@ -2566,7 +2629,7 @@ export function CampusWorld({
           />
         ) : (
           <Suspense fallback={null}><Scene night={night} quality={quality} walkMode={walkMode} setWalkMode={setWalkMode} controls={controls} introDone={introDone} setIntroFinished={setIntroFinished} data={data} snapshot={snapshot} selectedNodeId={selectedNodeId}
-            onSelectNode={handleSelectNode} onDoubleClickBuilding={handleDoubleClickBuilding} viewCommand={viewCommand} affectedNodeIds={affectedNodeIds} whatIfNodeIds={whatIfNodeIds} showDependencies={showDependencies} scanPath={scanPath}
+            onSelectNode={handleSelectNode} onDoubleClickBuilding={handleDoubleClickBuilding} onEnterBuilding={handleEnterBuildingFromLabel} viewCommand={viewCommand} affectedNodeIds={affectedNodeIds} whatIfNodeIds={whatIfNodeIds} showDependencies={showDependencies} scanPath={scanPath}
             facadeAdjustments={facadeAdjustments} onPhotoStatus={handlePhotoStatus} /></Suspense>
         )}
     </Canvas>
@@ -2715,6 +2778,71 @@ export function CampusWorld({
         <span>🖱 Click room or pill to enter Diorama · Scroll zoom · Drag orbit</span>
       </div>
     )}
+    {!alignment && interiorMode === 'campus' && (
+      <div className="campus-interaction-hint" style={{
+        position: 'absolute',
+        top: 56,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        background: 'rgba(15, 23, 21, 0.88)',
+        backdropFilter: 'blur(8px)',
+        border: '1px solid rgba(255, 255, 255, 0.2)',
+        color: '#f8fafc',
+        padding: '6px 18px',
+        borderRadius: 20,
+        fontSize: 13,
+        fontWeight: 600,
+        pointerEvents: 'none',
+        zIndex: 50,
+        boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+        whiteSpace: 'nowrap'
+      }}>
+        💡 Click a building, then Enter. Esc to go back.
+      </div>
+    )}
+    {!alignment && interiorMode === 'campus' && selectedBlock && selectedBlockRooms.length > 0 && (
+      <div className="canvas-enter-overlay" style={{
+        position: 'absolute',
+        bottom: 82,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 90,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        pointerEvents: 'auto'
+      }}>
+        <button
+          className="canvas-enter-building-btn"
+          id="canvas-enter-building-btn"
+          onClick={() => {
+            if (propOnEnterBuilding) {
+              propOnEnterBuilding(selectedBlock.blockId);
+            } else {
+              enterBlockCutaway(selectedBlock.blockId);
+            }
+          }}
+          style={{
+            padding: '12px 28px',
+            fontSize: 16,
+            fontWeight: 800,
+            color: '#ffffff',
+            background: 'linear-gradient(135deg, #16a34a, #15803d)',
+            border: '2px solid #86efac',
+            borderRadius: 30,
+            cursor: 'pointer',
+            boxShadow: '0 6px 20px rgba(0, 0, 0, 0.5), 0 0 16px rgba(74, 222, 128, 0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            letterSpacing: '0.02em',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          🚪 Enter {selectedBlock.displayName}
+        </button>
+      </div>
+    )}
     {!alignment && interiorMode === 'campus' && <div className="world-info"><Compass /><Minimap /></div>}
     {!alignment && interiorMode === 'campus' && (
       <div className="world-bottom">
@@ -2728,7 +2856,7 @@ export function CampusWorld({
           <button className="dock-btn" title="Canteen (Key: 6)" onClick={() => handleSelectNode('landmark-canteen')}>🍽️ Canteen (6)</button>
           <button className="dock-btn" title="Auditorium (Key: 7)" onClick={() => handleSelectNode('landmark-auditorium')}>🎭 Auditorium (7)</button>
         </div>
-        <span>🖱 Drag orbit · Scroll zoom · Right-drag pan · Click building · <b>Press I for Cutaway</b></span>
+        <span>Click a building, then Enter. Esc to go back.</span>
         <StatsPill />
       </div>
     )}
