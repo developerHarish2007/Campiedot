@@ -12,9 +12,39 @@ export function CampusMap(){
  const [panelOpen, setPanelOpen]=useState(false); // Collapsible drawer closed by default per spec
 
  // Interior navigation state (URL-synced & shared with 3D world)
- const [interiorMode, setInteriorMode] = useState<'campus' | 'cutaway' | 'diorama'>('campus');
- const [interiorBlockId, setInteriorBlockId] = useState<string>('PG');
- const [interiorRoomId, setInteriorRoomId] = useState<string>('PG-001');
+ const [interiorMode, setInteriorMode] = useState<'campus' | 'cutaway' | 'diorama'>(() => {
+   if (typeof window === 'undefined') return 'campus';
+   const params = new URLSearchParams(window.location.search);
+   const view = params.get('view');
+   if (view === 'cutaway') return 'cutaway';
+   if (view === 'room') return 'diorama';
+   return 'campus';
+ });
+ const [interiorBlockId, setInteriorBlockId] = useState<string>(() => {
+   if (typeof window === 'undefined') return 'PG';
+   const params = new URLSearchParams(window.location.search);
+   const b = params.get('block');
+   if (b) {
+     const blk = getBlock(b) ?? getBlockByNodeId(b);
+     if (blk) return blk.blockId;
+   }
+   const r = params.get('room');
+   if (r) {
+     const rm = getRoom(r) ?? getRoomByNodeIdOrAlias(r);
+     if (rm) return rm.blockId;
+   }
+   return 'PG';
+ });
+ const [interiorRoomId, setInteriorRoomId] = useState<string>(() => {
+   if (typeof window === 'undefined') return 'PG-001';
+   const params = new URLSearchParams(window.location.search);
+   const r = params.get('room');
+   if (r) {
+     const rm = getRoom(r) ?? getRoomByNodeIdOrAlias(r);
+     if (rm) return rm.roomId;
+   }
+   return 'PG-001';
+ });
 
  const selected=snapshot?.nodes.find(n=>n.id===selectedId);const unmappedWayId=selectedId.startsWith('osm-way-')?selectedId.slice('osm-way-'.length):null;const incident=snapshot?.incidents.find(i=>i.affectedNodeIds.length);
  const refresh=async()=>{try{const [s,i]=await Promise.all([campusApi.getMapStatus(),campusApi.getInvariants()]);setSnapshot(s);setInvariants(i);}catch(e){setMessage(e instanceof Error?e.message:'Could not load campus data');}};
