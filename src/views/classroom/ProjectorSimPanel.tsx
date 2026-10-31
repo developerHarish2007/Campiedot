@@ -9,6 +9,7 @@ import {
   projectorSim
 } from '../../sim/projectorSim';
 import { DevicePrediction, projectorPredictor } from '../../sim/projectorPredictor';
+import { dashboardBridge } from '../../services/dashboardBridge';
 
 interface SimPanelProps {
   currentDay: number;
@@ -43,6 +44,12 @@ export function ProjectorSimPanel({
   const [isPlaying, setIsPlaying] = useState(false);
   const [localTab, setLocalTab] = useState<'status' | 'connection'>(activeTab);
   const [localSelectedDev, setLocalSelectedDev] = useState<string>(selectedDeviceId);
+  const [, setBridgeTick] = useState(0);
+  const [copiedWarning, setCopiedWarning] = useState(false);
+
+  useEffect(() => {
+    return dashboardBridge.subscribe(() => setBridgeTick(t => t + 1));
+  }, []);
 
   // Sync props to state if provided externally
   useEffect(() => {
@@ -464,6 +471,124 @@ export function ProjectorSimPanel({
                   </div>
                 );
               })}
+
+              {/* CAMPUSOPS DASHBOARD INTEGRATION SECTION */}
+              {(() => {
+                const targetRoomId = selectedConfig?.roomId ?? 'PG-201';
+                const roomOpenReports = dashboardBridge.getOpenReportsForRoom(targetRoomId);
+                const lastWarning = dashboardBridge.getLastWarningNotice();
+
+                return (
+                  <div style={{ marginTop: 8, padding: '10px 12px', background: '#090d16', borderRadius: 8, border: '1px solid #334155' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span>🔗</span> CampusOps Dashboard Bridge
+                      </span>
+                      <span style={{ fontSize: 9.5, padding: '2px 6px', borderRadius: 4, background: '#1e293b', color: '#94a3b8', fontFamily: 'monospace' }}>
+                        Room: {targetRoomId} ({dashboardBridge.toTheirRoomId(targetRoomId)})
+                      </span>
+                    </div>
+
+                    {/* Student Report Simulation Controls */}
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                      <button
+                        onClick={() => dashboardBridge.simulateStudentReport(targetRoomId, 'AV')}
+                        style={{
+                          flex: 1,
+                          padding: '6px 8px',
+                          fontSize: 10,
+                          fontWeight: 700,
+                          background: '#dc2626',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: 4,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 4
+                        }}
+                        title="Simulate student report for this room"
+                      >
+                        🚨 Simulate student report (simulated)
+                      </button>
+                      {roomOpenReports.length > 0 && (
+                        <button
+                          onClick={() => dashboardBridge.resolveReportsForRoom(targetRoomId)}
+                          style={{
+                            padding: '6px 10px',
+                            fontSize: 10,
+                            fontWeight: 700,
+                            background: '#16a34a',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: 4,
+                            cursor: 'pointer'
+                          }}
+                          title="Resolve report"
+                        >
+                          ✓ Resolve ({roomOpenReports.length})
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Open Reports Status */}
+                    {roomOpenReports.length > 0 ? (
+                      <div style={{ fontSize: 9.5, color: '#fca5a5', marginBottom: 8, padding: '5px 8px', background: 'rgba(239, 68, 68, 0.18)', borderRadius: 4, border: '1px solid rgba(239, 68, 68, 0.4)' }}>
+                        🚨 <b>{roomOpenReports.length} Open Student Report:</b> Needs monitoring (Room {targetRoomId})
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 9, color: '#64748b', marginBottom: 8 }}>
+                        No open student reports for {targetRoomId}. Click button above to simulate.
+                      </div>
+                    )}
+
+                    {/* Predictive Warning Status & Technician Confirmation Notice */}
+                    <div style={{ borderTop: '1px solid #1e293b', paddingTop: 8 }}>
+                      {lastWarning ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                          <div style={{ fontSize: 10, color: '#fbbf24', fontWeight: 600 }}>
+                            Warning sent to dashboard: {lastWarning.id}, {lastWarning.time}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard?.writeText(JSON.stringify(lastWarning.payload, null, 2));
+                                setCopiedWarning(true);
+                                setTimeout(() => setCopiedWarning(false), 2500);
+                              }}
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: 9.5,
+                                fontWeight: 600,
+                                background: '#334155',
+                                color: '#e2e8f0',
+                                border: '1px solid #475569',
+                                borderRadius: 4,
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {copiedWarning ? '✓ Copied to clipboard!' : '📋 Copy warning JSON'}
+                            </button>
+                            <span style={{ fontSize: 9, color: '#94a3b8' }}>
+                              Role: <b>{lastWarning.payload.workerRole}</b> · Mode: <b>{lastWarning.payload.failureMode}</b>
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 9, color: '#64748b' }}>
+                          No warning dispatched yet. Trigger a fault above to dispatch predictive warning.
+                        </div>
+                      )}
+
+                      {/* Explicit one-line rule notice */}
+                      <div style={{ marginTop: 6, fontSize: 8.5, color: '#94a3b8', fontStyle: 'italic', borderLeft: '2px solid #eab308', paddingLeft: 6 }}>
+                        ⚠️ Notice: Predictor cannot approve its own warning. The ticket stays a warning until a technician confirms it.
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 

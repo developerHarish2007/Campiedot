@@ -4,6 +4,7 @@ import { OrbitControls, Billboard, Text } from '@react-three/drei';
 import { BoxGeometry as THREE_BoxGeometry, DoubleSide, MeshStandardMaterial, Color } from 'three';
 import type { RegistryBlock, RegistryRoom, RegistryEquipment } from '../../data/registry/registryService';
 import { getEquipmentHealthState } from '../../data/registry/registryService';
+import { dashboardBridge } from '../../services/dashboardBridge';
 
 import type { DevicePrediction } from '../../sim/projectorPredictor';
 
@@ -31,6 +32,11 @@ export function BuildingCutaway({
   const [selectedFloor, setSelectedFloor] = useState<number | 'all'>('all');
   const [hoveredRoomId, setHoveredRoomId] = useState<string | null>(null);
   const [floorSeparation, setFloorSeparation] = useState(DEFAULT_FLOOR_SPACING);
+  const [, setBridgeTick] = useState(0);
+
+  useEffect(() => {
+    return dashboardBridge.subscribe(() => setBridgeTick(t => t + 1));
+  }, []);
 
   const floorCount = block.floors;
   const isPgBlock = block.blockId === 'PG';
@@ -39,8 +45,8 @@ export function BuildingCutaway({
   useEffect(() => {
     console.log(`[interior] entering ${block.blockId}`);
     if (isPgBlock) {
-      camera.position.set(54, 38, 54);
-      camera.lookAt(8, 12, -4);
+      camera.position.set(52, 22, 50);
+      camera.lookAt(6, 11, -3);
     } else {
       camera.position.set(44, 34, 44);
       camera.lookAt(0, (floorCount * floorSeparation) / 2 + 1, 0);
@@ -188,6 +194,9 @@ function PgRoomsLayout({
         const smartLab = room.type === 'smart_lab' || roomEquip.length > 0;
         const isHovered = hoveredRoomId === room.roomId;
 
+        const openReportCount = dashboardBridge.getOpenReportCount(room.roomId);
+        const hasOpenReport = openReportCount > 0;
+
         // Health state (dynamic from projector predictor if available)
         const pred = predictions?.[`${room.roomId}-PROJ`];
         const worstHealth = pred ? pred.healthState : roomEquip.reduce((prev, curr) => {
@@ -197,6 +206,8 @@ function PgRoomsLayout({
           if (state === 'degrading' && prev === 'healthy') return 'degrading';
           return prev;
         }, 'healthy');
+
+        const isWarning = worstHealth === 'degrading' || worstHealth === 'imminent';
 
         return (
           <group
@@ -212,43 +223,60 @@ function PgRoomsLayout({
             >
               <boxGeometry args={[slot.w, 0.9, slot.d]} />
               <meshStandardMaterial
-                color={isHovered ? '#fef08a' : smartLab ? '#e0f2fe' : '#f8fafc'}
-                roughness={0.5}
+                color={hasOpenReport ? '#ef4444' : isWarning ? '#fde047' : isHovered ? '#fef08a' : smartLab ? '#e0f2fe' : '#f8fafc'}
+                roughness={0.4}
                 transparent
-                opacity={0.88}
+                opacity={hasOpenReport ? 0.95 : 0.88}
               />
             </mesh>
 
             {/* Perimeter Low Cutaway Wall Outline */}
             <lineSegments>
               <edgesGeometry args={[new (THREE_BoxGeometry as any)(slot.w, 0.9, slot.d)]} />
-              <lineBasicMaterial color={isHovered ? '#ca8a04' : smartLab ? '#0284c7' : '#64748b'} linewidth={isHovered ? 2.5 : 1} />
+              <lineBasicMaterial
+                color={hasOpenReport ? '#991b1b' : isWarning ? '#eab308' : isHovered ? '#ca8a04' : smartLab ? '#0284c7' : '#64748b'}
+                linewidth={hasOpenReport || isWarning || isHovered ? 2.5 : 1}
+              />
             </lineSegments>
 
             {/* Room Label Badge */}
             <Billboard
-              position={[0, 1.3, 0]}
+              position={[0, hasOpenReport ? 1.7 : 1.3, 0]}
               onClick={(e) => { e.stopPropagation(); onSelectRoom(room.roomId); }}
               onPointerOver={() => { onHoverRoom(room.roomId); document.body.style.cursor = 'pointer'; }}
               onPointerOut={() => { onHoverRoom(null); document.body.style.cursor = ''; }}
             >
               <group>
                 <mesh>
-                  <planeGeometry args={[2.2, 0.65]} />
-                  <meshBasicMaterial color={isHovered ? '#1e293b' : '#334155'} transparent opacity={0.9} />
+                  <planeGeometry args={[hasOpenReport ? 2.8 : 2.2, 0.65]} />
+                  <meshBasicMaterial
+                    color={hasOpenReport ? '#dc2626' : isWarning ? '#854d0e' : isHovered ? '#1e293b' : '#334155'}
+                    transparent
+                    opacity={0.95}
+                  />
                 </mesh>
                 <Text position={[0, 0.08, 0.01]} fontSize={0.22} color="#ffffff" anchorX="center" anchorY="middle">
                   {room.displayName}
                 </Text>
-                <Text position={[0, -0.15, 0.01]} fontSize={0.13} color={smartLab ? '#38bdf8' : '#cbd5e1'} anchorX="center" anchorY="middle">
-                  {smartLab ? '★ SMART LAB' : room.type.toUpperCase()}
+                <Text position={[0, -0.15, 0.01]} fontSize={0.13} color="#ffffff" anchorX="center" anchorY="middle">
+                  {hasOpenReport
+                    ? `🚨 ${openReportCount} Needs monitoring`
+                    : isWarning
+                    ? '⚡ Degraded'
+                    : smartLab
+                    ? '★ SMART LAB'
+                    : room.type.toUpperCase()}
                 </Text>
               </group>
             </Billboard>
 
-            {/* Smart Lab Pulsing Health Dot */}
-            {smartLab && (
-              <HealthStatusDot position={[slot.w / 2 - 0.4, 1.4, slot.d / 2 - 0.4]} state={worstHealth} />
+            {/* Status Indicator Marker (Red for Report, Yellow for Degraded/Imminent) */}
+            {(smartLab || hasOpenReport || isWarning) && (
+              <HealthStatusDot
+                position={[slot.w / 2 - 0.4, 1.4, slot.d / 2 - 0.4]}
+                state={worstHealth}
+                reportCount={openReportCount}
+              />
             )}
           </group>
         );
@@ -306,6 +334,9 @@ function StandardRoomsLayout({
         const d = 8.5;
         const isHovered = hoveredRoomId === room.roomId;
 
+        const openReportCount = dashboardBridge.getOpenReportCount(room.roomId);
+        const hasOpenReport = openReportCount > 0;
+
         return (
           <group
             key={room.roomId}
@@ -319,7 +350,7 @@ function StandardRoomsLayout({
             >
               <boxGeometry args={[w, 0.9, d]} />
               <meshStandardMaterial
-                color={isHovered ? '#fef08a' : '#f8fafc'}
+                color={hasOpenReport ? '#fca5a5' : isHovered ? '#fef08a' : '#f8fafc'}
                 roughness={0.5}
                 transparent
                 opacity={0.88}
@@ -327,7 +358,10 @@ function StandardRoomsLayout({
             </mesh>
             <lineSegments>
               <edgesGeometry args={[new (THREE_BoxGeometry as any)(w, 0.9, d)]} />
-              <lineBasicMaterial color={isHovered ? '#ca8a04' : '#64748b'} linewidth={isHovered ? 2.5 : 1} />
+              <lineBasicMaterial
+                color={hasOpenReport ? '#dc2626' : isHovered ? '#ca8a04' : '#64748b'}
+                linewidth={hasOpenReport || isHovered ? 2.5 : 1}
+              />
             </lineSegments>
             <Billboard
               position={[0, 1.3, 0]}
@@ -338,16 +372,24 @@ function StandardRoomsLayout({
               <group>
                 <mesh>
                   <planeGeometry args={[2.0, 0.6]} />
-                  <meshBasicMaterial color="#334155" transparent opacity={0.9} />
+                  <meshBasicMaterial color={isHovered ? '#1e293b' : hasOpenReport ? '#7f1d1d' : '#334155'} transparent opacity={0.9} />
                 </mesh>
                 <Text position={[0, 0.08, 0.01]} fontSize={0.2} color="#ffffff" anchorX="center" anchorY="middle">
                   {room.displayName}
                 </Text>
-                <Text position={[0, -0.14, 0.01]} fontSize={0.12} color="#cbd5e1" anchorX="center" anchorY="middle">
-                  {room.type.toUpperCase()}
+                <Text position={[0, -0.14, 0.01]} fontSize={0.12} color={hasOpenReport ? '#fca5a5' : '#cbd5e1'} anchorX="center" anchorY="middle">
+                  {hasOpenReport ? `🚨 ${openReportCount} REPORT` : room.type.toUpperCase()}
                 </Text>
               </group>
             </Billboard>
+
+            {hasOpenReport && (
+              <HealthStatusDot
+                position={[w / 2 - 0.4, 1.4, d / 2 - 0.4]}
+                state="failed"
+                reportCount={openReportCount}
+              />
+            )}
           </group>
         );
       })}
@@ -359,23 +401,50 @@ function StandardRoomsLayout({
 // Equipment Health Dot Indicator
 // -------------------------------------------------------------
 
-function HealthStatusDot({ position, state }: { position: [number, number, number]; state: string }) {
-  const color =
+function HealthStatusDot({
+  position,
+  state,
+  reportCount = 0
+}: {
+  position: [number, number, number];
+  state: string;
+  reportCount?: number;
+}) {
+  const hasReport = reportCount > 0;
+  const isWarning = state === 'degrading' || state === 'imminent';
+
+  // Red wins if report exists, else yellow if degraded/imminent, else green
+  const color = hasReport ? '#ef4444' :
     state === 'failed' ? '#ef4444' :
-    state === 'imminent' ? '#f97316' :
+    state === 'imminent' ? '#eab308' :
     state === 'degrading' ? '#eab308' : '#10b981';
 
   return (
     <group position={position}>
       <mesh>
-        <sphereGeometry args={[0.22, 16, 16]} />
+        <sphereGeometry args={[0.26, 16, 16]} />
         <meshBasicMaterial color={color} />
       </mesh>
       {/* Outer Glow Ring */}
       <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.26, 0.38, 24]} />
+        <ringGeometry args={[0.3, 0.44, 24]} />
         <meshBasicMaterial color={color} transparent opacity={0.65} side={DoubleSide} />
       </mesh>
+
+      {/* Badge when report or warning */}
+      {(hasReport || isWarning) && (
+        <Billboard position={[0, 0.65, 0]}>
+          <group>
+            <mesh>
+              <planeGeometry args={[hasReport ? 2.3 : 1.4, 0.42]} />
+              <meshBasicMaterial color={hasReport ? '#991b1b' : '#854d0e'} />
+            </mesh>
+            <Text position={[0, 0, 0.01]} fontSize={0.16} color="#ffffff" anchorX="center" anchorY="middle">
+              {hasReport ? `🚨 ${reportCount} Needs monitoring` : `⚡ Degraded`}
+            </Text>
+          </group>
+        </Billboard>
+      )}
     </group>
   );
 }

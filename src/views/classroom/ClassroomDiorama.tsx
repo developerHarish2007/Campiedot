@@ -11,6 +11,7 @@ import {
 import type { RegistryRoom, RegistryEquipment } from '../../data/registry/registryService';
 import { getEquipmentHealthState } from '../../data/registry/registryService';
 import type { DevicePrediction } from '../../sim/projectorPredictor';
+import { dashboardBridge } from '../../services/dashboardBridge';
 import {
   getTileTexture,
   getWallTexture,
@@ -37,6 +38,11 @@ const WALL_THICK = 0.23;
 
 export function ClassroomDiorama({ room, equipment, prediction, onBack, night = false, onSelectProjector }: DioramaProps) {
   const [hoveredEquip, setHoveredEquip] = useState<RegistryEquipment | null>(null);
+  const [, setBridgeTick] = useState(0);
+
+  useEffect(() => {
+    return dashboardBridge.subscribe(() => setBridgeTick(t => t + 1));
+  }, []);
 
   const { camera } = useThree();
   useEffect(() => {
@@ -368,6 +374,41 @@ export function ClassroomDiorama({ room, equipment, prediction, onBack, night = 
           </>
         )}
       </group>
+
+      {/* Room Status Indicator (Open Reports / Predictive Warnings) */}
+      {(() => {
+        const openReports = dashboardBridge.getOpenReportsForRoom(room.roomId);
+        const hasReport = openReports.length > 0;
+        const isDegradedOrImminent = prediction && (prediction.healthState === 'degrading' || prediction.healthState === 'imminent');
+        if (!hasReport && !isDegradedOrImminent) return null;
+
+        const badgeColor = hasReport ? '#991b1b' : '#854d0e';
+        const primaryText = hasReport
+          ? `🚨 ${openReports.length} Open Report(s) · Needs monitoring`
+          : `⚡ Predictive Warning: ${prediction?.failureMode.toUpperCase()}`;
+        const subText = hasReport && isDegradedOrImminent
+          ? `⚡ Also degraded: ${prediction?.failureMode}`
+          : hasReport
+          ? 'Reported via CampusOps Portal'
+          : `Health: ${((prediction?.healthScore ?? 0) * 100).toFixed(0)}% · Imminent`;
+
+        return (
+          <Billboard position={[0, 2.75, -0.6]}>
+            <group>
+              <mesh>
+                <planeGeometry args={[3.4, 0.76]} />
+                <meshBasicMaterial color={badgeColor} transparent opacity={0.92} />
+              </mesh>
+              <Text position={[0, 0.12, 0.01]} fontSize={0.16} color="#ffffff" anchorX="center" anchorY="middle">
+                {primaryText}
+              </Text>
+              <Text position={[0, -0.15, 0.01]} fontSize={0.12} color="#fef08a" anchorX="center" anchorY="middle">
+                {subText}
+              </Text>
+            </group>
+          </Billboard>
+        );
+      })()}
 
       {/* OrbitControls from back-corner view into classroom */}
       <OrbitControls

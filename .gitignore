@@ -1,4 +1,8 @@
 node_modules/
 dist/
-.env.local
+.env
+.env.*
+*.key
+*.pem
+*service-account*.json
 *.tsbuildinfo

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const assignmentsFile = fileURLToPath(new URL('./public/data/building-assignments.json', import.meta.url));
 const adjustmentsFile = fileURLToPath(new URL('./public/data/facade-adjustments.json', import.meta.url));
+const outboxFile = fileURLToPath(new URL('./dashboard/outbox/warnings.json', import.meta.url));
 const choices = new Set([
   'unassigned', 'not a campus building', 'Main Block', 'Electronics Block', 'Electronics Block I', 'Electronics Block II',
   'Basic Engineering Block', 'PG Block', 'Civil Block', 'Mechanical Block', 'Workshop Block 1', 'Workshop Block 2',
@@ -63,6 +64,46 @@ function alignmentAssignments(): Plugin {
           } catch {
             res.statusCode = 400;
             res.end('Invalid facade adjustments JSON');
+          }
+        });
+      });
+
+      server.middlewares.use('/__dashboard/outbox', (req, res, next) => {
+        if (req.method === 'GET') {
+          try {
+            if (existsSync(outboxFile)) {
+              res.setHeader('Content-Type', 'application/json');
+              res.end(readFileSync(outboxFile));
+              return;
+            }
+          } catch {}
+          res.setHeader('Content-Type', 'application/json');
+          res.end('[]');
+          return;
+        }
+        if (req.method !== 'POST') { next(); return; }
+        let body = '';
+        req.on('data', chunk => { body += chunk; if (body.length > 65536) req.destroy(); });
+        req.on('end', () => {
+          try {
+            const parsed = JSON.parse(body);
+            let existing: any[] = [];
+            if (existsSync(outboxFile)) {
+              try { existing = JSON.parse(readFileSync(outboxFile, 'utf8')); } catch {}
+            }
+            if (!Array.isArray(existing)) existing = [];
+            const idx = existing.findIndex((item: any) => item.id === parsed.id);
+            if (idx >= 0) {
+              existing[idx] = parsed;
+            } else {
+              existing.unshift(parsed);
+            }
+            writeFileSync(outboxFile, `${JSON.stringify(existing, null, 2)}\n`, 'utf8');
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ ok: true, count: existing.length }));
+          } catch {
+            res.statusCode = 400;
+            res.end('Invalid warning payload JSON');
           }
         });
       });

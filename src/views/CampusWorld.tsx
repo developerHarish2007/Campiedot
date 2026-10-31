@@ -29,6 +29,7 @@ import {
   getOrderedCampusBlocks
 } from '../data/registry/registryService';
 import { ScrollableDock } from './common/ScrollableDock';
+import { dashboardBridge } from '../services/dashboardBridge';
 
 type XZ = { x: number; z: number };
 type ViewCommand = { type: 'focus' | 'overview'; revision: number; id?: string };
@@ -1617,6 +1618,7 @@ function Building({
       const regBlk = getBlockByOsmWay(record.osmWayId) ?? getBlockByNodeId(id);
       const labelText = node?.name ?? regBlk?.displayName;
       if (!labelText) return null;
+      const hasOpenReports = regBlk ? dashboardBridge.buildingHasOpenReports(regBlk.blockId) : false;
       return (
         <Billboard
           position={[record.centroid.x, height + 2.2, record.centroid.z]}
@@ -1625,6 +1627,27 @@ function Building({
           lockY={false}
           lockZ={false}
         >
+          {/* Red dot marker if building has open student reports */}
+          {hasOpenReports && (
+            <group position={[0, 2.2, 0]}>
+              <mesh>
+                <sphereGeometry args={[0.9, 16, 16]} />
+                <meshBasicMaterial color="#ef4444" />
+              </mesh>
+              <Billboard position={[0, 1.4, 0]}>
+                <group>
+                  <mesh>
+                    <planeGeometry args={[4.2, 0.9]} />
+                    <meshBasicMaterial color="#991b1b" />
+                  </mesh>
+                  <Text fontSize={0.38} color="#ffffff" anchorX="center" anchorY="middle">
+                    🚨 Needs monitoring
+                  </Text>
+                </group>
+              </Billboard>
+            </group>
+          )}
+
           <mesh
             position={[0, 0, 0.1]}
             onClick={e => {
@@ -1640,7 +1663,7 @@ function Building({
           <Text
             fontSize={1.6}
             maxWidth={Math.min(record.widthMeters, 18)}
-            color="#fff7e8"
+            color={hasOpenReports ? '#fca5a5' : '#fff7e8'}
             outlineWidth={.06}
             outlineColor="#35413c"
             anchorX="center"
@@ -2366,6 +2389,17 @@ export function CampusWorld({
     return res;
   }, [simDay, projectorFaults, noiseEnabled]);
 
+  const [, setBridgeTick] = useState(0);
+  useEffect(() => {
+    return dashboardBridge.subscribe(() => setBridgeTick(t => t + 1));
+  }, []);
+
+  useEffect(() => {
+    Object.values(projectorPredictions).forEach(pred => {
+      dashboardBridge.checkAndDispatchPrediction(pred);
+    });
+  }, [projectorPredictions]);
+
   const interiorMode = propInteriorMode ?? localInteriorMode;
   const setInteriorMode = useCallback((mode: 'campus' | 'cutaway' | 'diorama') => {
     onInteriorModeChange?.(mode);
@@ -2865,22 +2899,48 @@ export function CampusWorld({
         >
           {currentBlockRooms.map(r => {
             const isSelected = r.roomId === interiorRoomId;
+            const reports = dashboardBridge.getOpenReportsForRoom(r.roomId);
+            const hasReport = reports.length > 0;
+            const pred = projectorPredictions[`${r.roomId}-PROJ`];
+            const isWarning = pred && (pred.healthState === 'degrading' || pred.healthState === 'imminent');
+
+            const pillBg = hasReport
+              ? '#b91c1c'
+              : isWarning
+              ? '#854d0e'
+              : isSelected
+              ? '#15803d'
+              : r.type === 'smart_lab'
+              ? '#254e3f'
+              : undefined;
+
+            const pillBorder = hasReport
+              ? '#fca5a5'
+              : isWarning
+              ? '#fde047'
+              : isSelected
+              ? '#86efac'
+              : r.type === 'smart_lab'
+              ? '#72c8a0'
+              : undefined;
+
             return (
               <button
                 key={r.roomId}
                 data-dock-id={r.roomId}
                 className={`dock-btn ${isSelected ? 'selected' : ''} ${r.type === 'smart_lab' ? 'active' : ''}`}
                 style={{
-                  background: isSelected ? '#15803d' : r.type === 'smart_lab' ? '#254e3f' : undefined,
-                  borderColor: isSelected ? '#86efac' : r.type === 'smart_lab' ? '#72c8a0' : undefined,
-                  fontWeight: isSelected ? 700 : undefined
+                  background: pillBg,
+                  borderColor: pillBorder,
+                  color: hasReport || isWarning || isSelected ? '#ffffff' : undefined,
+                  fontWeight: hasReport || isWarning || isSelected ? 700 : undefined
                 }}
-                title={`View ${r.displayName} (${r.type})`}
+                title={hasReport ? `🚨 ${reports.length} open report(s)` : isWarning ? `⚡ Degraded: ${pred?.failureMode}` : `View ${r.displayName} (${r.type})`}
                 onClick={() => {
                   enterRoomDiorama(r.roomId);
                 }}
               >
-                {r.type === 'smart_lab' ? '★ ' : ''}{r.displayName}
+                {hasReport ? `🚨 ${reports.length} ` : isWarning ? '⚡ ' : r.type === 'smart_lab' ? '★ ' : ''}{r.displayName}
               </button>
             );
           })}
