@@ -75,3 +75,4 @@ if (!hasPg201) {
 
 fs.writeFileSync(path, JSON.stringify(data, null, 2), 'utf8');
 console.log('Updated campusRegistry.json successfully!');
+
